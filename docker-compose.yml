@@ -1,0 +1,127 @@
+services:
+  trendradar:
+    image: wantcat/trendradar:latest
+    container_name: trendradar
+    restart: unless-stopped
+    networks:
+      - news_network
+    volumes:
+      - ./trendradar/config:/app/config:ro
+      - ./trendradar/output:/app/output
+    environment:
+      - TZ=Asia/Shanghai
+      - ENABLE_CRAWLER=${ENABLE_CRAWLER:-true}
+      - ENABLE_NOTIFICATION=${ENABLE_NOTIFICATION:-true}
+      - REPORT_MODE=${REPORT_MODE:-incremental}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
+      - RUN_MODE=${RUN_MODE:-cron}
+      - IMMEDIATE_RUN=${IMMEDIATE_RUN:-true}
+      # AI 分析配置
+      - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      # Generic Webhook 推送到 Dashboard
+      - GENERIC_WEBHOOK_URL=http://dashboard:8000/webhook/receive
+      - "GENERIC_WEBHOOK_TEMPLATE={\"title\": \"{title}\", \"content\": \"{content}\"}"
+    depends_on:
+      - dashboard
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: my_dashboard/Dockerfile
+    container_name: my_dashboard
+    restart: unless-stopped
+    networks:
+      - news_network
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - AI_MODEL=${AI_MODEL:-deepseek-chat}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: unless-stopped
+    networks:
+      - news_network
+    ports:
+      - "1200:1200"
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      - CACHE_EXPIRE=300
+      # 访问控制（可选）
+      - ACCESS_KEY=${RSSHUB_ACCESS_KEY:-}
+      # 代理配置（可选）
+      - PROXY_URI=${PROXY_URI:-}
+
+  # NocoDB - 数据库可视化管理界面
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: nocodb
+    restart: unless-stopped
+    networks:
+      - news_network
+    ports:
+      - "8180:8080"
+    volumes:
+      # NocoDB 自身数据存储
+      - ./nocodb_data:/usr/app/data
+      # 挂载项目数据库目录
+      - ./data:/app/project_data
+    environment:
+      - TZ=Asia/Shanghai
+      - NC_DB=pg://nocodb_meta:5432?u=postgres&p=password&d=nocodb
+      # 禁用遥测
+      - NC_DISABLE_TELE=true
+
+  # NocoDB 元数据存储（PostgreSQL）
+  nocodb_meta:
+    image: postgres:15-alpine
+    container_name: nocodb_meta
+    restart: unless-stopped
+    networks:
+      - news_network
+    volumes:
+      - ./nocodb_pg_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=nocodb
+
+  postgres:
+    image: postgres:15
+    container_name: ainews_postgres
+    restart: unless-stopped
+    networks:
+      - news_network
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ainews
+      POSTGRES_USER: ainews
+      POSTGRES_PASSWORD: ainews_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ainews"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  news_network:
+    driver: bridge
+
+volumes:
+  pgdata:
