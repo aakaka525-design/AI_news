@@ -17,14 +17,21 @@ STOCKS_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "stock
 T = TypeVar('T', bound=BaseModel)
 
 
+def _is_sqlite(conn) -> bool:
+    """Detect whether *conn* is a SQLite connection."""
+    return "sqlite" in type(conn).__module__
+
+
 def _object_type(conn: sqlite3.Connection, name: str) -> Optional[str]:
-    row = conn.execute(
-        "SELECT type FROM sqlite_master WHERE name=?",
-        (name,),
-    ).fetchone()
-    if not row:
-        return None
-    return row[0]
+    """Get object type. Works with SQLite only (backwards compat)."""
+    try:
+        row = conn.execute(
+            "SELECT type FROM sqlite_master WHERE name=?",
+            (name,),
+        ).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None  # Not SQLite, or table doesn't exist
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
@@ -359,8 +366,10 @@ def get_connection(timeout: int = 30) -> sqlite3.Connection:
     conn = sqlite3.connect(STOCKS_DB_PATH, timeout=timeout)
     # Use Row so callers can safely use both row[0] and row["col"] styles.
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=30000;")
+    # Only apply SQLite-specific PRAGMAs
+    if _is_sqlite(conn):
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
     _ensure_compat_views(conn)
     return conn
 
@@ -429,12 +438,13 @@ def insert_validated(
                 )
             else:
                 sql = (
-                    f"INSERT OR IGNORE INTO {table} ({', '.join(columns)}) "
-                    f"VALUES ({', '.join(placeholders)})"
+                    f"INSERT INTO {table} ({', '.join(columns)}) "
+                    f"VALUES ({', '.join(placeholders)}) "
+                    f"ON CONFLICT ({conflict_cols}) DO NOTHING"
                 )
         else:
             sql = (
-                f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) "
+                f"INSERT INTO {table} ({', '.join(columns)}) "
                 f"VALUES ({', '.join(placeholders)})"
             )
 

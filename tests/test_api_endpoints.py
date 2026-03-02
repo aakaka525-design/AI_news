@@ -6,7 +6,6 @@ Uses httpx.AsyncClient with ASGITransport against a temporary SQLite database
 so every test run is fully isolated.
 """
 
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,57 +14,36 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 
+from src.database.engine import create_engine_from_url, get_session_factory
+from src.database.repositories.news import NewsRepository
 
-def _create_tables(db_path: Path):
-    """Create the same schema that api.main.init_db() would create."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            cleaned_data TEXT,
-            hotspots TEXT,
-            keywords TEXT,
-            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_received_at ON news(received_at DESC)
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS analysis_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            input_count INTEGER,
-            analysis_summary TEXT,
-            opportunities TEXT,
-            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_analysis_date ON analysis_results(date)
-    """)
-    conn.commit()
-    conn.close()
+
+def _make_test_repo(tmp_path: Path):
+    """Create an isolated engine/session/repo backed by a temp SQLite file."""
+    db_file = tmp_path / "test_news.db"
+    db_url = f"sqlite:///{db_file}"
+    engine = create_engine_from_url(db_url)
+    session_factory = get_session_factory(engine)
+    repo = NewsRepository(session_factory)
+    repo.create_tables(engine)
+    return engine, session_factory, repo
 
 
 @pytest_asyncio.fixture()
 async def client(tmp_path: Path):
     """
     Yield an ``httpx.AsyncClient`` wired to the FastAPI app with:
-      - DB_PATH pointed at a fresh temporary database (tables pre-created)
+      - _engine, _Session, _repo pointed at a fresh temporary database
       - Scheduler calls stubbed out (no real APScheduler activity)
       - AI analyser disabled
     """
-    tmp_db = tmp_path / "test_news.db"
-    _create_tables(tmp_db)
+    engine, session_factory, repo = _make_test_repo(tmp_path)
 
-    # Patch DB_PATH and heavy side-effects in the startup event.
+    # Patch the module-level database objects and heavy side-effects.
     with (
-        patch("api.main.DB_PATH", tmp_db),
+        patch("api.main._engine", engine),
+        patch("api.main._Session", session_factory),
+        patch("api.main._repo", repo),
         patch("api.main.register_default_tasks"),
         patch("api.main.scheduler_manager") as mock_sched,
         patch("api.main.create_analyzer_from_env", return_value=None),

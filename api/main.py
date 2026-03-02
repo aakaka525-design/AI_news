@@ -3,7 +3,6 @@ AI News Dashboard - FastAPI 服务
 接收 TrendRadar Webhook 推送，清洗、存储并展示热点新闻
 """
 
-import sqlite3
 import json
 import os
 from datetime import datetime
@@ -31,16 +30,21 @@ from ai_analyzer import AIAnalyzer, create_analyzer_from_env
 # 导入调度器模块
 from scheduler import scheduler_manager, register_default_tasks
 
+# 导入数据库引擎和仓储层
+from src.database.engine import create_engine_from_url, get_session_factory
+from src.database.repositories.news import NewsRepository
+from config.settings import NEWS_DATABASE_URL
+
 # ============================================================
 # 配置
 # ============================================================
 
-# 智能选择数据库路径：Docker 环境用 /app/data，本地用 ./data
-if Path("/app/data").exists():
-    DB_PATH = Path("/app/data/news.db")
-else:
-    DB_PATH = Path(__file__).parent.parent / "data" / "news.db"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+# 数据库引擎和仓储层（模块级别单例）
+_engine = create_engine_from_url(NEWS_DATABASE_URL)
+_Session = get_session_factory(_engine)
+_repo = NewsRepository(_Session)
 
 app = FastAPI(title="AI News Dashboard", version="2.0.0")
 
@@ -85,169 +89,68 @@ class AnalyzeRequest(BaseModel):
 
 
 # ============================================================
-# 数据库操作
+# 数据库操作 (通过 NewsRepository)
 # ============================================================
-
-def init_db():
-    """初始化数据库"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    # 开启 WAL 模式 (P0 优化)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            cleaned_data TEXT,
-            hotspots TEXT,
-            keywords TEXT,
-            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_received_at ON news(received_at DESC)
-    """)
-    # AI 分析结果表
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS analysis_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            input_count INTEGER,
-            analysis_summary TEXT,
-            opportunities TEXT,
-            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_analysis_date ON analysis_results(date)
-    """)
-    conn.commit()
-    conn.close()
-
 
 def save_news(title: str, content: str, cleaned: Optional[CleanedData] = None) -> int:
     """保存新闻到数据库"""
-    conn = sqlite3.connect(DB_PATH)
-    
     cleaned_json = None
     hotspots = None
     keywords = None
-    
+
     if cleaned:
         cleaned_json = json.dumps(cleaned.to_dict(), ensure_ascii=False)
         hotspots = ",".join(cleaned.hotspots)
         keywords = ",".join(cleaned.keywords)
-    
-    cursor = conn.execute(
-        "INSERT INTO news (title, content, cleaned_data, hotspots, keywords) VALUES (?, ?, ?, ?, ?)",
-        (title, content, cleaned_json, hotspots, keywords)
+
+    return _repo.insert_news(
+        title=title,
+        content=content,
+        cleaned_data=cleaned_json,
+        hotspots=hotspots,
+        keywords=keywords,
     )
-    news_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return news_id
 
 
 def get_recent_news(limit: int = 50) -> list[NewsRecord]:
     """获取最近的新闻"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT id, title, content, cleaned_data, received_at FROM news ORDER BY received_at DESC LIMIT ?",
-        (limit,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    
+    items = _repo.get_news_list(limit=limit)
     records = []
-    for row in rows:
-        cleaned_data = None
-        if row["cleaned_data"]:
-            try:
-                cleaned_data = json.loads(row["cleaned_data"])
-            except:
-                pass
-        
+    for item in items:
         records.append(NewsRecord(
-            id=row["id"],
-            title=row["title"],
-            content=row["content"],
-            content_html=markdown.markdown(row["content"]),
-            received_at=row["received_at"],
-            cleaned_data=cleaned_data
+            id=item["id"],
+            title=item["title"],
+            content=item["content"],
+            content_html=markdown.markdown(item["content"]),
+            received_at=item["received_at"] or "",
+            cleaned_data=item["cleaned_data"],
         ))
     return records
 
 
 def get_news_count() -> int:
     """获取新闻总数"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.execute("SELECT COUNT(*) FROM news")
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
+    return _repo.get_news_count()
 
 
 def get_all_hotspots() -> list[tuple[str, int]]:
     """获取所有热点统计"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.execute("SELECT hotspots FROM news WHERE hotspots IS NOT NULL")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    from collections import Counter
-    counter = Counter()
-    for row in rows:
-        if row[0]:
-            for keyword in row[0].split(","):
-                if keyword.strip():
-                    counter[keyword.strip()] += 1
-    
-    return counter.most_common(20)
+    return _repo.get_hotspot_stats(top_n=20)
 
 
 def get_news_by_date(date: str, limit: int = 20) -> list[dict]:
-    """
-    根据日期查询新闻数据（用于 AI 分析）
-    
-    Args:
-        date: 日期字符串，格式 2026-01-16
-        limit: 最多返回条数
-    
-    Returns:
-        list[dict]: 新闻数据列表
-    """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    # 使用 LIKE 匹配，兼容不同的时间格式
-    cursor = conn.execute(
-        "SELECT id, title, content FROM news WHERE received_at LIKE ? ORDER BY id DESC LIMIT ?",
-        (f"{date}%", limit)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return [{"id": r["id"], "title": r["title"], "content": r["content"]} for r in rows]
+    """根据日期查询新闻数据（用于 AI 分析）"""
+    return _repo.get_news_by_date(date, limit=limit)
 
 
 def save_analysis_result(date: str, input_count: int, result: dict) -> int:
     """保存 AI 分析结果"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.execute(
-        "INSERT INTO analysis_results (date, input_count, analysis_summary, opportunities) VALUES (?, ?, ?, ?)",
-        (
-            date,
-            input_count,
-            result.get("analysis_summary", ""),
-            json.dumps(result.get("opportunities", []), ensure_ascii=False)
-        )
+    return _repo.insert_analysis(
+        date=date,
+        input_count=input_count,
+        analysis_summary=result.get("analysis_summary", ""),
+        opportunities=result.get("opportunities", []),
     )
-    analysis_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return analysis_id
 
 
 # ============================================================
@@ -279,8 +182,8 @@ _task_running = False
 @app.on_event("startup")
 async def startup():
     """启动时初始化数据库和调度器"""
-    init_db()
-    print(f"📦 数据库初始化完成: {DB_PATH}")
+    _repo.create_tables(_engine)
+    print(f"📦 数据库初始化完成: {NEWS_DATABASE_URL}")
     print(f"🧹 数据清洗模块已加载")
     
     # 检查 AI 分析是否可用
@@ -391,26 +294,10 @@ async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verif
 @app.get("/api/analysis/{analysis_id}")
 async def get_analysis(analysis_id: int):
     """获取历史分析结果"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT * FROM analysis_results WHERE id = ?",
-        (analysis_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    
+    row = _repo.get_analysis_by_id(analysis_id)
     if not row:
         return {"error": "分析结果不存在"}
-    
-    return {
-        "id": row["id"],
-        "date": row["date"],
-        "input_count": row["input_count"],
-        "analysis_summary": row["analysis_summary"],
-        "opportunities": json.loads(row["opportunities"]) if row["opportunities"] else [],
-        "analyzed_at": row["analyzed_at"]
-    }
+    return row
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -461,19 +348,10 @@ async def api_hotspots():
 @app.get("/api/facts/{news_id}")
 async def api_facts(news_id: int):
     """API - 获取单条新闻的结构化事实"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT cleaned_data FROM news WHERE id = ?",
-        (news_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row or not row["cleaned_data"]:
+    row = _repo.get_news_by_id(news_id)
+    if not row or not row.get("cleaned_data"):
         return {"error": "Not found or not cleaned"}
-    
-    return json.loads(row["cleaned_data"])
+    return row["cleaned_data"]
 
 
 @app.get("/health")
@@ -482,9 +360,7 @@ async def health():
     db_ok = True
     db_error = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("SELECT 1")
-        conn.close()
+        db_ok = _repo.health_check()
     except Exception as e:
         db_ok = False
         db_error = str(e)
@@ -493,7 +369,7 @@ async def health():
     status = "healthy" if db_ok and scheduler_ok else "degraded"
     return {
         "status": status,
-        "db": {"path": str(DB_PATH), "ok": db_ok, "error": db_error},
+        "db": {"url": str(NEWS_DATABASE_URL), "ok": db_ok, "error": db_error},
         "scheduler": {
             "running": scheduler_ok,
             "error": SCHEDULER_STATUS["error"],
@@ -684,13 +560,9 @@ async def run_scheduled_task(
             
             if not items:
                 try:
-                    conn = sqlite3.connect(DB_PATH)
-                    conn.row_factory = sqlite3.Row
-                    cursor = conn.execute("SELECT id, title, content FROM news ORDER BY id DESC LIMIT 20")
-                    rows = cursor.fetchall()
-                    conn.close()
-                    if rows:
-                        items = [{"id": r["id"], "title": r["title"], "content": r["content"][:200]} for r in rows]
+                    news_rows = _repo.get_recent_news_for_task(limit=20)
+                    if news_rows:
+                        items = news_rows
                         data_source = "news"
                 except Exception as e:
                     print(f"⚠️ News 加载失败: {e}")
@@ -720,19 +592,12 @@ async def run_scheduled_task(
             # Step 4: 保存到数据库
             try:
                 date = datetime.now().strftime("%Y-%m-%d")
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.execute(
-                    "INSERT INTO analysis_results (date, input_count, analysis_summary, opportunities) VALUES (?, ?, ?, ?)",
-                    (
-                        date,
-                        len(items),
-                        analysis.get("analysis_summary", ""),
-                        json.dumps(analysis.get("opportunities", []), ensure_ascii=False)
-                    )
+                analysis_id = _repo.insert_analysis(
+                    date=date,
+                    input_count=len(items),
+                    analysis_summary=analysis.get("analysis_summary", ""),
+                    opportunities=analysis.get("opportunities", []),
                 )
-                analysis_id = cursor.lastrowid
-                conn.commit()
-                conn.close()
                 result["steps"].append({"step": "save_db", "status": "ok", "analysis_id": analysis_id})
             except Exception as e:
                 result["steps"].append({"step": "save_db", "status": "error", "error": str(e)})
