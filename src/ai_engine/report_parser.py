@@ -15,6 +15,11 @@ from typing import Optional
 
 from src.database.connection import get_connection
 
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None  # type: ignore[assignment,misc]
+
 
 def log(msg: str):
     """格式化输出日志信息。"""
@@ -233,9 +238,7 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
     Requires:
         DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量
     """
-    try:
-        from openai import AsyncOpenAI
-    except ImportError:
+    if AsyncOpenAI is None:
         log("   ⚠️ 需要安装 openai: pip install openai")
         return None
     
@@ -279,6 +282,60 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
 # ============================================================
 # 批量分析
 # ============================================================
+
+def analyze_and_save_reports(
+    repo,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Analyze reports using rule-based extraction and save results via repository.
+
+    Args:
+        repo: ReportRepository instance
+        limit: Number of reports to analyze
+
+    Returns:
+        List of analysis results
+    """
+    reports = repo.get_reports(limit=limit)
+
+    results = []
+    for report in reports:
+        analysis = analyze_report_rule_based({
+            "report_title": report.get("title", ""),
+            "rating": report.get("rating", ""),
+        })
+
+        # Map sentiment to numeric score
+        sentiment_score = (
+            0.8 if analysis["sentiment"] == "positive"
+            else 0.5 if analysis["sentiment"] == "neutral"
+            else 0.2
+        )
+
+        # Save structured fields
+        repo.save_analysis(
+            ts_code=report["ts_code"],
+            publish_date=report["publish_date"],
+            institution=report["institution"],
+            analysis={
+                "target_price": analysis["target_price"],
+                "rating_change": analysis["rating_change"],
+                "key_points": analysis["key_points"],
+                "summary": None,
+                "sentiment_score": sentiment_score,
+            },
+        )
+
+        analysis["ts_code"] = report["ts_code"]
+        analysis["stock_name"] = report["stock_name"]
+        analysis["title"] = report["title"]
+        analysis["institution"] = report["institution"]
+        analysis["publish_date"] = report["publish_date"]
+        results.append(analysis)
+
+    return results
+
 
 def analyze_recent_reports(limit: int = 20) -> list[dict]:
     """

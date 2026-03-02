@@ -1,6 +1,7 @@
 """Tests for research report rule-based extraction."""
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.ai_engine.report_parser import (
     extract_target_price_from_title,
@@ -8,6 +9,7 @@ from src.ai_engine.report_parser import (
     extract_key_points,
     extract_risk_factors,
     analyze_report_rule_based,
+    analyze_report_with_llm,
 )
 
 
@@ -148,3 +150,116 @@ class TestAnalyzeReportRuleBased:
         assert result["rating_change"] is None
         assert result["key_points"] == []
         assert result["sentiment"] == "negative"  # empty rating -> negative
+
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.database.repositories.report import ReportRepository
+from src.ai_engine.report_parser import analyze_and_save_reports
+
+
+class TestAnalyzeAndSave:
+    @pytest.fixture()
+    def repo(self, tmp_path):
+        db_url = f"sqlite:///{tmp_path / 'test.db'}"
+        engine = create_engine(db_url)
+        Session = sessionmaker(bind=engine)
+        repository = ReportRepository(Session)
+        repository.create_tables(engine)
+        return repository
+
+    def test_analyze_and_save_populates_fields(self, repo):
+        repo.upsert_report({
+            "ts_code": "000001.SZ",
+            "stock_name": "平安银行",
+            "title": "目标价：50元，业绩超预期，维持买入",
+            "institution": "中信证券",
+            "rating": "买入",
+            "publish_date": "20260301",
+        })
+        results = analyze_and_save_reports(repo)
+        assert len(results) == 1
+        assert results[0]["target_price"] == 50.0
+        assert results[0]["sentiment"] == "positive"
+
+        # Verify saved to DB
+        reports = repo.get_reports(ts_code="000001.SZ")
+        assert reports[0]["target_price"] == 50.0
+        assert reports[0]["key_points"] == ["业绩点评"]
+
+    def test_analyze_empty_repo(self, repo):
+        results = analyze_and_save_reports(repo)
+        assert results == []
+
+
+class TestAnalyzeReportWithLLM:
+    @pytest.mark.asyncio
+    async def test_returns_none_without_api_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            result = await analyze_report_with_llm({"report_title": "test"})
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_successful_analysis(self):
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"core_logic": "增长强劲", "catalysts": ["新品"], "risks": ["竞争"], "sentiment_score": 0.8}'
+                )
+            )
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
+            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+                result = await analyze_report_with_llm({
+                    "report_title": "业绩超预期",
+                    "institution": "中信证券",
+                    "rating": "买入",
+                })
+
+        assert result is not None
+        assert result["core_logic"] == "增长强劲"
+        assert "新品" in result["catalysts"]
+        assert result["sentiment_score"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_handles_api_error(self):
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
+
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
+            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+                result = await analyze_report_with_llm({
+                    "report_title": "test",
+                    "institution": "test",
+                    "rating": "买入",
+                })
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_extracts_json_from_markdown(self):
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='```json\n{"core_logic": "test", "catalysts": [], "risks": [], "sentiment_score": 0.5}\n```'
+                )
+            )
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
+            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+                result = await analyze_report_with_llm({
+                    "report_title": "test",
+                    "institution": "test",
+                    "rating": "买入",
+                })
+        assert result is not None
+        assert result["core_logic"] == "test"
