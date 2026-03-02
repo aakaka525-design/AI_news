@@ -10,22 +10,22 @@
 存入 stocks.db 数据库
 """
 
-import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import akshare as ak
 import pandas as pd
 
-from src.analysis.technical import macd as calc_macd, rsi as calc_rsi
+from src.analysis.technical import macd as calc_macd
+from src.analysis.technical import rsi as calc_rsi
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # 使用公共数据库模块
-from src.database.connection import get_connection, STOCKS_DB_PATH
+from src.database.connection import STOCKS_DB_PATH, get_connection
 
 
 def init_indicator_tables():
@@ -200,7 +200,7 @@ def fetch_earnings_forecast(report_date: str = None):
                     ),
                 )
                 count += 1
-            except Exception as e:
+            except Exception:
                 pass
 
         conn.commit()
@@ -432,7 +432,7 @@ def fetch_stock_financials(stock_codes: list = None):
             if (i + 1) % 10 == 0:
                 print(f"   [{i + 1}/{len(stock_codes)}] 已处理...")
 
-        except Exception as e:
+        except Exception:
             pass
 
     conn.commit()
@@ -445,7 +445,7 @@ def fetch_stock_daily(stock_code: str, days: int = 60):
     """获取个股日行情（含换手率），带数据验证"""
     try:
         from src.data_ingestion.akshare.models import StockDaily
-        from src.database.connection import validate_and_create, insert_validated
+        from src.database.connection import insert_validated, validate_and_create
 
         df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", adjust="qfq")
         if df.empty:
@@ -479,7 +479,7 @@ def fetch_stock_daily(stock_code: str, days: int = 60):
         conn.commit()
         conn.close()
         return count
-    except Exception as e:
+    except Exception:
         return 0
 
 
