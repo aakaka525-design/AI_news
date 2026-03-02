@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.analysis.sector_rotation import (
     detect_rotation,
@@ -19,13 +18,15 @@ def _make_sector_rps(n_days: int = 30, n_sectors: int = 5) -> pd.DataFrame:
     sectors = [f"sector_{i}" for i in range(n_sectors)]
     for date in dates:
         for sector in sectors:
-            rows.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "sector_name": sector,
-                "rps_10": np.random.uniform(10, 100),
-                "rps_20": np.random.uniform(10, 100),
-                "rps_50": np.random.uniform(10, 100),
-            })
+            rows.append(
+                {
+                    "date": date.strftime("%Y-%m-%d"),
+                    "sector_name": sector,
+                    "rps_10": np.random.uniform(10, 100),
+                    "rps_20": np.random.uniform(10, 100),
+                    "rps_50": np.random.uniform(10, 100),
+                }
+            )
     return pd.DataFrame(rows)
 
 

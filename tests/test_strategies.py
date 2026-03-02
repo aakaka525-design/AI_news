@@ -2,10 +2,9 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from src.analysis.strategies import rps_momentum_signal, ma_crossover_signal
 from src.analysis.backtest_engine import BacktestEngine
+from src.analysis.strategies import ma_crossover_signal, rps_momentum_signal
 
 
 def _make_price_with_rps(n_days: int = 120) -> pd.DataFrame:
@@ -14,17 +13,19 @@ def _make_price_with_rps(n_days: int = 120) -> pd.DataFrame:
     returns = np.random.normal(0.001, 0.02, n_days)
     close = 10.0 * np.cumprod(1 + returns)
     dates = pd.bdate_range("2025-01-01", periods=n_days)
-    return pd.DataFrame({
-        "date": dates,
-        "open": close * 0.999,
-        "high": close * 1.01,
-        "low": close * 0.99,
-        "close": close,
-        "volume": np.random.randint(100000, 1000000, n_days),
-        "rps_10": np.random.uniform(50, 100, n_days),
-        "rps_20": np.random.uniform(40, 95, n_days),
-        "rps_50": np.random.uniform(30, 90, n_days),
-    })
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.999,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "close": close,
+            "volume": np.random.randint(100000, 1000000, n_days),
+            "rps_10": np.random.uniform(50, 100, n_days),
+            "rps_20": np.random.uniform(40, 95, n_days),
+            "rps_50": np.random.uniform(30, 90, n_days),
+        }
+    )
 
 
 class TestRpsMomentumSignal:

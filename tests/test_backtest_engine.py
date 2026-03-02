@@ -13,14 +13,16 @@ def _make_price_data(n_days: int = 100, start_price: float = 10.0) -> pd.DataFra
     returns = np.random.normal(0.001, 0.02, n_days)
     close = start_price * np.cumprod(1 + returns)
     dates = pd.bdate_range("2025-01-01", periods=n_days)
-    return pd.DataFrame({
-        "date": dates,
-        "open": close * (1 + np.random.uniform(-0.005, 0.005, n_days)),
-        "high": close * (1 + np.abs(np.random.normal(0, 0.01, n_days))),
-        "low": close * (1 - np.abs(np.random.normal(0, 0.01, n_days))),
-        "close": close,
-        "volume": np.random.randint(100000, 1000000, n_days),
-    })
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * (1 + np.random.uniform(-0.005, 0.005, n_days)),
+            "high": close * (1 + np.abs(np.random.normal(0, 0.01, n_days))),
+            "low": close * (1 - np.abs(np.random.normal(0, 0.01, n_days))),
+            "close": close,
+            "volume": np.random.randint(100000, 1000000, n_days),
+        }
+    )
 
 
 def _always_hold_signal(df: pd.DataFrame) -> pd.Series:

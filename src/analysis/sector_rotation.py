@@ -105,12 +105,14 @@ def rotation_momentum(
     for _, row in latest.iterrows():
         short_val = float(row.get(short_period, 0))
         long_val = float(row.get(long_period, 0))
-        result.append({
-            "sector_name": row["sector_name"],
-            "momentum": short_val - long_val,
-            "short_rps": short_val,
-            "long_rps": long_val,
-        })
+        result.append(
+            {
+                "sector_name": row["sector_name"],
+                "momentum": short_val - long_val,
+                "short_rps": short_val,
+                "long_rps": long_val,
+            }
+        )
 
     result.sort(key=lambda x: x["momentum"], reverse=True)
     return result

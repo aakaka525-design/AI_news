@@ -5,11 +5,11 @@ import pandas as pd
 import pytest
 
 from src.analysis.backtest_metrics import (
-    sharpe_ratio,
-    max_drawdown,
     cagr,
-    win_rate,
+    max_drawdown,
     profit_factor,
+    sharpe_ratio,
+    win_rate,
 )
 
 
