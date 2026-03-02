@@ -1,0 +1,895 @@
+"""
+AI News Dashboard - FastAPI 服务
+接收 TrendRadar Webhook 推送，清洗、存储并展示热点新闻
+"""
+
+import sqlite3
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+from fastapi import FastAPI, Request, Depends, HTTPException, Header
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+import markdown
+
+# 导入响应模型
+from api.schemas import NewsListResponse, WebhookResponse
+
+# 导入数据清洗模块
+from cleaner import clean_raw_data, clean_and_export, CleanedData
+
+# 导入 AI 分析模块
+from ai_analyzer import AIAnalyzer, create_analyzer_from_env
+
+# 导入调度器模块
+from scheduler import scheduler_manager, register_default_tasks
+
+# ============================================================
+# 配置
+# ============================================================
+
+# 智能选择数据库路径：Docker 环境用 /app/data，本地用 ./data
+if Path("/app/data").exists():
+    DB_PATH = Path("/app/data/news.db")
+else:
+    DB_PATH = Path(__file__).parent.parent / "data" / "news.db"
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+app = FastAPI(title="AI News Dashboard", version="2.0.0")
+
+from api.middleware import register_exception_handlers
+register_exception_handlers(app)
+
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+SCHEDULER_STATUS = {"running": False, "error": None}
+
+
+# ============================================================
+# 数据模型
+# ============================================================
+
+class WebhookPayload(BaseModel):
+    """TrendRadar Webhook 数据格式"""
+    title: str
+    content: str
+
+
+class NewsRecord(BaseModel):
+    """新闻记录"""
+    id: int
+    title: str
+    content: str
+    content_html: str
+    received_at: str
+    # 新增：清洗后的结构化数据
+    cleaned_data: Optional[dict] = None
+
+
+class CleanRequest(BaseModel):
+    """清洗请求"""
+    title: str
+    content: str
+
+
+class AnalyzeRequest(BaseModel):
+    """AI 分析请求"""
+    date: str  # 格式: 2026-01-16
+    limit: int = 20  # 最多分析条数
+
+
+# ============================================================
+# 数据库操作
+# ============================================================
+
+def init_db():
+    """初始化数据库"""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    # 开启 WAL 模式 (P0 优化)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            cleaned_data TEXT,
+            hotspots TEXT,
+            keywords TEXT,
+            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_received_at ON news(received_at DESC)
+    """)
+    # AI 分析结果表
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            input_count INTEGER,
+            analysis_summary TEXT,
+            opportunities TEXT,
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_analysis_date ON analysis_results(date)
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_news(title: str, content: str, cleaned: Optional[CleanedData] = None) -> int:
+    """保存新闻到数据库"""
+    conn = sqlite3.connect(DB_PATH)
+    
+    cleaned_json = None
+    hotspots = None
+    keywords = None
+    
+    if cleaned:
+        cleaned_json = json.dumps(cleaned.to_dict(), ensure_ascii=False)
+        hotspots = ",".join(cleaned.hotspots)
+        keywords = ",".join(cleaned.keywords)
+    
+    cursor = conn.execute(
+        "INSERT INTO news (title, content, cleaned_data, hotspots, keywords) VALUES (?, ?, ?, ?, ?)",
+        (title, content, cleaned_json, hotspots, keywords)
+    )
+    news_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return news_id
+
+
+def get_recent_news(limit: int = 50) -> list[NewsRecord]:
+    """获取最近的新闻"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute(
+        "SELECT id, title, content, cleaned_data, received_at FROM news ORDER BY received_at DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    
+    records = []
+    for row in rows:
+        cleaned_data = None
+        if row["cleaned_data"]:
+            try:
+                cleaned_data = json.loads(row["cleaned_data"])
+            except:
+                pass
+        
+        records.append(NewsRecord(
+            id=row["id"],
+            title=row["title"],
+            content=row["content"],
+            content_html=markdown.markdown(row["content"]),
+            received_at=row["received_at"],
+            cleaned_data=cleaned_data
+        ))
+    return records
+
+
+def get_news_count() -> int:
+    """获取新闻总数"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute("SELECT COUNT(*) FROM news")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_all_hotspots() -> list[tuple[str, int]]:
+    """获取所有热点统计"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute("SELECT hotspots FROM news WHERE hotspots IS NOT NULL")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    from collections import Counter
+    counter = Counter()
+    for row in rows:
+        if row[0]:
+            for keyword in row[0].split(","):
+                if keyword.strip():
+                    counter[keyword.strip()] += 1
+    
+    return counter.most_common(20)
+
+
+def get_news_by_date(date: str, limit: int = 20) -> list[dict]:
+    """
+    根据日期查询新闻数据（用于 AI 分析）
+    
+    Args:
+        date: 日期字符串，格式 2026-01-16
+        limit: 最多返回条数
+    
+    Returns:
+        list[dict]: 新闻数据列表
+    """
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    # 使用 LIKE 匹配，兼容不同的时间格式
+    cursor = conn.execute(
+        "SELECT id, title, content FROM news WHERE received_at LIKE ? ORDER BY id DESC LIMIT ?",
+        (f"{date}%", limit)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [{"id": r["id"], "title": r["title"], "content": r["content"]} for r in rows]
+
+
+def save_analysis_result(date: str, input_count: int, result: dict) -> int:
+    """保存 AI 分析结果"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute(
+        "INSERT INTO analysis_results (date, input_count, analysis_summary, opportunities) VALUES (?, ?, ?, ?)",
+        (
+            date,
+            input_count,
+            result.get("analysis_summary", ""),
+            json.dumps(result.get("opportunities", []), ensure_ascii=False)
+        )
+    )
+    analysis_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return analysis_id
+
+
+# ============================================================
+# API 鉴权 (P0 安全修复)
+# ============================================================
+
+DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "")
+
+async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
+    """验证 API Key"""
+    if not DASHBOARD_API_KEY:
+        # 未配置 Key 时跳过验证（开发模式）
+        return None
+    if x_api_key != DASHBOARD_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API Key")
+    return x_api_key
+
+
+# 任务执行锁 (P2 防重入)
+import asyncio
+_task_lock = asyncio.Lock()
+_task_running = False
+
+
+# ============================================================
+# API 路由
+# ============================================================
+
+@app.on_event("startup")
+async def startup():
+    """启动时初始化数据库和调度器"""
+    init_db()
+    print(f"📦 数据库初始化完成: {DB_PATH}")
+    print(f"🧹 数据清洗模块已加载")
+    
+    # 检查 AI 分析是否可用
+    analyzer = create_analyzer_from_env()
+    if analyzer:
+        print(f"🤖 AI 分析模块已启用")
+    else:
+        print(f"⚠️ AI 分析模块未启用 (设置 AI_ANALYSIS_ENABLED=true)")
+    
+    # 启动调度器
+    try:
+        register_default_tasks()
+        scheduler_manager.start()
+        SCHEDULER_STATUS["running"] = True
+        SCHEDULER_STATUS["error"] = None
+        print(f"📅 调度器已启动")
+    except Exception as e:
+        SCHEDULER_STATUS["running"] = False
+        SCHEDULER_STATUS["error"] = str(e)
+        print(f"⚠️ 调度器启动失败: {e}")
+        if os.getenv("SCHEDULER_REQUIRED", "false").lower() == "true":
+            raise
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """关闭时停止调度器"""
+    scheduler_manager.stop()
+    SCHEDULER_STATUS["running"] = False
+    print(f"⏹️ 调度器已停止")
+
+
+@app.post("/webhook/receive", response_model=WebhookResponse)
+async def receive_webhook(payload: WebhookPayload):
+    """
+    接收 TrendRadar Webhook 推送
+    自动进行数据清洗
+    """
+    # 清洗数据
+    cleaned = clean_raw_data(payload.title, payload.content)
+    
+    # 保存到数据库
+    news_id = save_news(payload.title, payload.content, cleaned)
+    received_at = datetime.now().isoformat()
+    
+    print(f"✅ 收到推送 #{news_id}: {payload.title[:50]}...")
+    print(f"   热点: {cleaned.hotspots}")
+    print(f"   关键词: {cleaned.keywords[:5]}")
+    
+    return {
+        "status": "ok",
+        "message": f"Received at {received_at}",
+        "news_id": news_id,
+        "hotspots": cleaned.hotspots,
+        "keywords": cleaned.keywords
+    }
+
+
+@app.post("/api/clean")
+async def clean_data(request: CleanRequest):
+    """
+    清洗数据 API
+    
+    输入：原始数据
+    输出：结构化事实清单
+    """
+    cleaned = clean_raw_data(request.title, request.content)
+    return cleaned.to_dict()
+
+
+@app.post("/api/analyze")
+async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verify_api_key)):
+    """
+    AI 热点分析 API
+    
+    输入：日期和条数限制
+    输出：机会分析报告 JSON
+    """
+    # 创建分析器
+    analyzer = create_analyzer_from_env()
+    if not analyzer:
+        return {
+            "error": "AI 分析未启用",
+            "hint": "请在 .env 中设置 AI_ANALYSIS_ENABLED=true 和 AI_API_KEY"
+        }
+    
+    # 查询数据
+    news_items = get_news_by_date(request.date, request.limit)
+    if not news_items:
+        return {
+            "error": f"未找到 {request.date} 的新闻数据",
+            "hint": "请确认该日期有数据，或检查日期格式 (YYYY-MM-DD)"
+        }
+    
+    # 调用 AI 分析 (async + await)
+    result = await analyzer.analyze_opportunities(news_items)
+    
+    # 保存结果
+    if "error" not in result:
+        analysis_id = save_analysis_result(request.date, len(news_items), result)
+        result["analysis_id"] = analysis_id
+        result["input_count"] = len(news_items)
+        result["date"] = request.date
+    
+    return result
+
+
+@app.get("/api/analysis/{analysis_id}")
+async def get_analysis(analysis_id: int):
+    """获取历史分析结果"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute(
+        "SELECT * FROM analysis_results WHERE id = ?",
+        (analysis_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return {"error": "分析结果不存在"}
+    
+    return {
+        "id": row["id"],
+        "date": row["date"],
+        "input_count": row["input_count"],
+        "analysis_summary": row["analysis_summary"],
+        "opportunities": json.loads(row["opportunities"]) if row["opportunities"] else [],
+        "analyzed_at": row["analyzed_at"]
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    """首页 - 展示最近热点"""
+    news_list = get_recent_news(limit=50)
+    total_count = get_news_count()
+    hotspots = get_all_hotspots()
+    
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "news_list": news_list,
+            "total_count": total_count,
+            "hotspots": hotspots,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    )
+
+
+@app.get("/console", response_class=HTMLResponse)
+async def console(request: Request):
+    """测试控制台"""
+    return templates.TemplateResponse("console.html", {"request": request})
+
+
+@app.get("/api/news", response_model=NewsListResponse)
+async def api_news(limit: int = 50):
+    """API - 获取新闻列表（含清洗数据）"""
+    news_list = get_recent_news(limit=limit)
+    return {
+        "total": get_news_count(),
+        "data": [n.dict() for n in news_list]
+    }
+
+
+@app.get("/api/hotspots")
+async def api_hotspots():
+    """API - 获取热点关键词统计"""
+    hotspots = get_all_hotspots()
+    return {
+        "total": len(hotspots),
+        "data": [{"keyword": k, "count": c} for k, c in hotspots]
+    }
+
+
+@app.get("/api/facts/{news_id}")
+async def api_facts(news_id: int):
+    """API - 获取单条新闻的结构化事实"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute(
+        "SELECT cleaned_data FROM news WHERE id = ?",
+        (news_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row or not row["cleaned_data"]:
+        return {"error": "Not found or not cleaned"}
+    
+    return json.loads(row["cleaned_data"])
+
+
+@app.get("/health")
+async def health():
+    """健康检查"""
+    db_ok = True
+    db_error = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("SELECT 1")
+        conn.close()
+    except Exception as e:
+        db_ok = False
+        db_error = str(e)
+
+    scheduler_ok = bool(SCHEDULER_STATUS["running"])
+    status = "healthy" if db_ok and scheduler_ok else "degraded"
+    return {
+        "status": status,
+        "db": {"path": str(DB_PATH), "ok": db_ok, "error": db_error},
+        "scheduler": {
+            "running": scheduler_ok,
+            "error": SCHEDULER_STATUS["error"],
+        },
+        "version": "2.0.0",
+    }
+
+
+# ============================================================
+# RSS 订阅 API
+# ============================================================
+
+@app.post("/api/rss/fetch")
+async def fetch_rss():
+    """抓取 RSS 订阅源"""
+    try:
+        from rss_fetcher import run_rss_fetch, DEFAULT_FEEDS
+        items = await run_rss_fetch(save=True)
+        return {
+            "status": "ok",
+            "fetched": len(items),
+            "sources": [f["name"] for f in DEFAULT_FEEDS]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/rss")
+async def get_rss(limit: int = 50):
+    """获取 RSS 条目列表"""
+    try:
+        from rss_fetcher import get_recent_rss
+        items = get_recent_rss(limit=limit)
+        return {"total": len(items), "data": items}
+    except Exception as e:
+        return {"error": str(e), "data": []}
+
+
+@app.post("/api/rss/analyze")
+async def analyze_rss_sentiment(limit: int = 10):
+    """对 RSS 新闻进行情感分析"""
+    try:
+        from sentiment_analyzer import analyze_pending_news, get_sentiment_stats
+        result = await analyze_pending_news(limit=limit)
+        stats = get_sentiment_stats()
+        return {"analysis": result, "stats": stats}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/rss/sentiment_stats")
+async def get_rss_sentiment_stats():
+    """获取情感分析统计"""
+    try:
+        from sentiment_analyzer import get_sentiment_stats
+        return get_sentiment_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# 调度器 API
+# ============================================================
+
+@app.get("/api/scheduler/jobs")
+async def get_scheduler_jobs():
+    """获取所有调度任务状态"""
+    try:
+        jobs = scheduler_manager.get_jobs()
+        return {
+            "running": scheduler_manager._running,
+            "jobs": [
+                {
+                    "id": j.task_id,
+                    "name": j.name,
+                    "description": j.description,
+                    "enabled": j.enabled,
+                    "next_run": j.next_run.isoformat() if j.next_run else None,
+                    "last_run": j.last_run.isoformat() if j.last_run else None,
+                    "last_result": j.last_result,
+                    "run_count": j.run_count
+                }
+                for j in jobs
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e), "jobs": []}
+
+
+@app.post("/api/scheduler/trigger/{job_id}")
+async def trigger_scheduler_job(job_id: str):
+    """手动触发任务"""
+    try:
+        result = await scheduler_manager.trigger_job(job_id)
+        return {
+            "success": result.success,
+            "message": result.message,
+            "duration": (result.end_time - result.start_time).total_seconds()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/scheduler/pause/{job_id}")
+async def pause_scheduler_job(job_id: str):
+    """暂停任务"""
+    success = scheduler_manager.pause_job(job_id)
+    if success:
+        return {"message": f"任务 {job_id} 已暂停"}
+    raise HTTPException(status_code=404, detail=f"任务 {job_id} 不存在")
+
+
+@app.post("/api/scheduler/resume/{job_id}")
+async def resume_scheduler_job(job_id: str):
+    """恢复任务"""
+    success = scheduler_manager.resume_job(job_id)
+    if success:
+        return {"message": f"任务 {job_id} 已恢复"}
+    raise HTTPException(status_code=404, detail=f"任务 {job_id} 不存在")
+
+
+@app.get("/api/scheduler/history/{job_id}")
+async def get_scheduler_history(job_id: str, limit: int = 10):
+    """获取任务执行历史"""
+    history = scheduler_manager.get_task_history(job_id, limit)
+    return {"job_id": job_id, "history": history}
+
+
+# ============================================================
+# 定时任务 API（避免 SQLite 多进程锁）
+# ============================================================
+
+class RunTaskRequest(BaseModel):
+    skip_rss: bool = False
+    skip_trendradar: bool = False
+
+
+@app.post("/api/run_task")
+async def run_scheduled_task(
+    request: RunTaskRequest = RunTaskRequest(),
+    _: None = Depends(verify_api_key)
+):
+    """
+    在 Web 进程内执行定时任务，避免 SQLite 锁冲突
+    
+    流程：RSS 抓取 → 数据加载 → AI 分析 → 存储
+    """
+    global _task_running
+    
+    # 防重入检查 (P2 修复)
+    if _task_running:
+        return {"error": "任务正在执行中，请稍后重试", "status": "busy"}
+    
+    from datetime import datetime
+    import json
+    
+    async with _task_lock:
+        _task_running = True
+        try:
+            result = {
+                "start_time": datetime.now().isoformat(),
+                "steps": []
+            }
+            
+            # Step 1: 抓取 RSS
+            if not request.skip_rss:
+                try:
+                    from rss_fetcher import run_rss_fetch
+                    items = await run_rss_fetch(save=True)
+                    result["steps"].append({"step": "rss_fetch", "status": "ok", "count": len(items)})
+                except Exception as e:
+                    result["steps"].append({"step": "rss_fetch", "status": "error", "error": str(e)})
+            
+            # Step 2: 加载数据（优先 RSS，然后 news 表）
+            items = []
+            data_source = None
+            
+            try:
+                from rss_fetcher import get_recent_rss
+                rss_items = get_recent_rss(limit=20)
+                if rss_items:
+                    items = [{"id": r["id"], "title": r["title"], "content": r.get("summary", "")} for r in rss_items]
+                    data_source = "rss"
+            except Exception as e:
+                print(f"⚠️ RSS 加载失败: {e}")
+            
+            if not items:
+                try:
+                    conn = sqlite3.connect(DB_PATH)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.execute("SELECT id, title, content FROM news ORDER BY id DESC LIMIT 20")
+                    rows = cursor.fetchall()
+                    conn.close()
+                    if rows:
+                        items = [{"id": r["id"], "title": r["title"], "content": r["content"][:200]} for r in rows]
+                        data_source = "news"
+                except Exception as e:
+                    print(f"⚠️ News 加载失败: {e}")
+            
+            if not items:
+                result["error"] = "没有可用数据"
+                return result
+            
+            result["steps"].append({"step": "load_data", "status": "ok", "source": data_source, "count": len(items)})
+            
+            # Step 3: AI 分析
+            analyzer = create_analyzer_from_env()
+            if not analyzer:
+                result["error"] = "AI 分析器未配置"
+                return result
+            
+            try:
+                analysis = await analyzer.analyze_opportunities(items)
+                if "error" in analysis:
+                    result["steps"].append({"step": "ai_analyze", "status": "error", "error": analysis["error"]})
+                    return result
+                result["steps"].append({"step": "ai_analyze", "status": "ok"})
+            except Exception as e:
+                result["steps"].append({"step": "ai_analyze", "status": "error", "error": str(e)})
+                return result
+            
+            # Step 4: 保存到数据库
+            try:
+                date = datetime.now().strftime("%Y-%m-%d")
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.execute(
+                    "INSERT INTO analysis_results (date, input_count, analysis_summary, opportunities) VALUES (?, ?, ?, ?)",
+                    (
+                        date,
+                        len(items),
+                        analysis.get("analysis_summary", ""),
+                        json.dumps(analysis.get("opportunities", []), ensure_ascii=False)
+                    )
+                )
+                analysis_id = cursor.lastrowid
+                conn.commit()
+                conn.close()
+                result["steps"].append({"step": "save_db", "status": "ok", "analysis_id": analysis_id})
+            except Exception as e:
+                result["steps"].append({"step": "save_db", "status": "error", "error": str(e)})
+            
+            # 汇总
+            result["end_time"] = datetime.now().isoformat()
+            result["analysis_summary"] = analysis.get("analysis_summary", "")
+            result["opportunities_count"] = len(analysis.get("opportunities", []))
+            
+            return result
+        finally:
+            _task_running = False
+
+
+# ============================================================
+# 研报 API
+# ============================================================
+
+@app.get("/api/research/reports")
+async def get_research_reports(stock_code: str = None, limit: int = 20):
+    """获取研报列表"""
+    try:
+        from fetchers.research_report import get_latest_reports, get_stock_reports
+        
+        if stock_code:
+            reports = get_stock_reports(stock_code, limit=limit)
+        else:
+            reports = get_latest_reports(limit=limit)
+        
+        return {"total": len(reports), "data": reports}
+    except Exception as e:
+        return {"error": str(e), "data": []}
+
+
+@app.post("/api/research/fetch")
+async def fetch_research_reports(stock_code: str = None, limit: int = 30):
+    """抓取研报数据"""
+    try:
+        from fetchers.research_report import fetch_stock_reports, save_reports, fetch_hot_stock_reports
+        
+        if stock_code:
+            reports = fetch_stock_reports(stock_code)
+            saved = save_reports(reports)
+            return {"stock_code": stock_code, "fetched": len(reports), "saved": saved}
+        else:
+            total = fetch_hot_stock_reports(limit=limit)
+            return {"fetched": total}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/research/stats")
+async def get_research_stats():
+    """获取研报统计"""
+    try:
+        from fetchers.research_report import get_rating_stats
+        return get_rating_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# 异常检测 API
+# ============================================================
+
+@app.get("/api/anomalies")
+async def get_anomalies(stock_code: str = None, days: int = 7, limit: int = 50):
+    """获取技术面异常信号"""
+    try:
+        from fetchers.anomaly_detector import get_recent_anomalies, get_stock_anomalies
+        
+        if stock_code:
+            anomalies = get_stock_anomalies(stock_code, days=days)
+        else:
+            anomalies = get_recent_anomalies(days=days, limit=limit)
+        
+        return {"total": len(anomalies), "data": anomalies}
+    except Exception as e:
+        return {"error": str(e), "data": []}
+
+
+@app.post("/api/anomalies/detect")
+async def detect_anomalies(stock_code: str = None, limit: int = 50):
+    """运行异常检测"""
+    try:
+        from fetchers.anomaly_detector import (
+            detect_all_hot_stocks,
+            detect_anomalies_for_stock,
+            init_anomaly_table,
+        )
+        
+        init_anomaly_table()
+        
+        if stock_code:
+            result = detect_anomalies_for_stock(stock_code)
+            return {"stock_code": stock_code, "result": result}
+        else:
+            result = detect_all_hot_stocks(limit=limit)
+            return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/anomalies/stats")
+async def get_anomaly_stats():
+    """获取异常统计"""
+    try:
+        from fetchers.anomaly_detector import get_anomaly_stats
+        return get_anomaly_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# 数据完整性 API
+# ============================================================
+
+@app.get("/api/integrity/check")
+async def check_data_integrity():
+    """检查数据完整性"""
+    try:
+        from fetchers.integrity_checker import generate_integrity_report
+        return generate_integrity_report()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/integrity/freshness")
+async def check_data_freshness():
+    """检查数据新鲜度"""
+    try:
+        from fetchers.integrity_checker import check_table_freshness
+        return {"tables": check_table_freshness()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# 交易日历 API
+# ============================================================
+
+@app.get("/api/calendar/is_trading_day")
+async def is_trading_day(date: str = None):
+    """判断是否为交易日"""
+    try:
+        from fetchers.trading_calendar import (
+            get_latest_trading_day,
+            is_trading_day as check_trading_day,
+        )
+        
+        if date is None:
+            date = datetime.now().strftime("%Y-%m-%d")
+        
+        return {
+            "date": date,
+            "is_trading_day": check_trading_day(date),
+            "latest_trading_day": get_latest_trading_day()
+        }
+    except Exception as e:
+        return {"error": str(e)}
