@@ -15,11 +15,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import BigInteger, func, text
+from sqlalchemy import BigInteger, func
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import ResearchReport
-
 
 # SQLite only auto-increments columns declared as exactly ``INTEGER``
 # (not ``BIGINT``).  Register a dialect-level compile rule so that
@@ -144,7 +143,9 @@ class ReportRepository:
             "rating": report.rating,
             "rating_change": report.rating_change,
             "target_price": float(report.target_price) if report.target_price else None,
-            "target_price_change": float(report.target_price_change) if report.target_price_change else None,
+            "target_price_change": float(report.target_price_change)
+            if report.target_price_change
+            else None,
             "content": report.content,
             "summary": report.summary,
             "key_points": report.key_points,

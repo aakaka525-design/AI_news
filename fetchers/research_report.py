@@ -7,7 +7,6 @@ Produces dicts compatible with ReportRepository.upsert_report().
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import pandas as pd
 
@@ -38,21 +37,23 @@ def parse_eastmoney_reports(stock_code: str, df: pd.DataFrame) -> list[dict]:
     Returns:
         List of dicts ready for ReportRepository.upsert_report()
     """
-    if df is None or not hasattr(df, 'empty') or df.empty:
+    if df is None or not hasattr(df, "empty") or df.empty:
         return []
 
     ts_code = _stock_suffix(stock_code)
     reports = []
 
     for _, row in df.iterrows():
-        reports.append({
-            "ts_code": ts_code,
-            "stock_name": row.get("股票简称") or None,
-            "title": row.get("报告名称") or "无标题",
-            "rating": row.get("东财评级") or None,
-            "institution": row.get("机构") or None,
-            "publish_date": _normalize_date(str(row.get("日期", ""))),
-        })
+        reports.append(
+            {
+                "ts_code": ts_code,
+                "stock_name": row.get("股票简称") or None,
+                "title": row.get("报告名称") or "无标题",
+                "rating": row.get("东财评级") or None,
+                "institution": row.get("机构") or None,
+                "publish_date": _normalize_date(str(row.get("日期", ""))),
+            }
+        )
 
     return reports
 
@@ -69,6 +70,7 @@ def fetch_stock_reports(stock_code: str) -> list[dict]:
     """
     try:
         import akshare as ak
+
         df = ak.stock_research_report_em(symbol=stock_code)
         return parse_eastmoney_reports(stock_code, df)
     except Exception as e:

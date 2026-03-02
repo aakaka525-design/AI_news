@@ -55,27 +55,31 @@ class TestReportRepositoryUpsert:
 class TestReportRepositoryQuery:
     def test_get_reports_by_code(self, repo):
         for i in range(3):
-            repo.upsert_report({
-                "ts_code": "000001.SZ",
-                "stock_name": "平安银行",
-                "title": f"报告{i}",
-                "institution": f"机构{i}",
-                "rating": "买入",
-                "publish_date": f"2026030{i + 1}",
-            })
+            repo.upsert_report(
+                {
+                    "ts_code": "000001.SZ",
+                    "stock_name": "平安银行",
+                    "title": f"报告{i}",
+                    "institution": f"机构{i}",
+                    "rating": "买入",
+                    "publish_date": f"2026030{i + 1}",
+                }
+            )
         reports = repo.get_reports(ts_code="000001.SZ", limit=2)
         assert len(reports) == 2
 
     def test_get_latest_reports(self, repo):
         for code in ["000001.SZ", "600519.SH"]:
-            repo.upsert_report({
-                "ts_code": code,
-                "stock_name": "测试",
-                "title": f"{code}报告",
-                "institution": "中信证券",
-                "rating": "买入",
-                "publish_date": "20260301",
-            })
+            repo.upsert_report(
+                {
+                    "ts_code": code,
+                    "stock_name": "测试",
+                    "title": f"{code}报告",
+                    "institution": "中信证券",
+                    "rating": "买入",
+                    "publish_date": "20260301",
+                }
+            )
         reports = repo.get_reports(limit=10)
         assert len(reports) == 2
 
@@ -87,14 +91,16 @@ class TestReportRepositoryQuery:
             ("中性", "机构D"),
         ]
         for rating, inst in ratings_and_institutions:
-            repo.upsert_report({
-                "ts_code": "000001.SZ",
-                "stock_name": "测试",
-                "title": f"{rating}报告",
-                "institution": inst,
-                "rating": rating,
-                "publish_date": "20260301",
-            })
+            repo.upsert_report(
+                {
+                    "ts_code": "000001.SZ",
+                    "stock_name": "测试",
+                    "title": f"{rating}报告",
+                    "institution": inst,
+                    "rating": rating,
+                    "publish_date": "20260301",
+                }
+            )
         stats = repo.get_rating_stats()
         assert stats["买入"] == 2
         assert stats["增持"] == 1
@@ -102,14 +108,16 @@ class TestReportRepositoryQuery:
 
 class TestReportRepositoryAnalysis:
     def test_save_analysis_fields(self, repo):
-        repo.upsert_report({
-            "ts_code": "000001.SZ",
-            "stock_name": "平安银行",
-            "title": "目标价：50元",
-            "institution": "中信证券",
-            "rating": "买入",
-            "publish_date": "20260301",
-        })
+        repo.upsert_report(
+            {
+                "ts_code": "000001.SZ",
+                "stock_name": "平安银行",
+                "title": "目标价：50元",
+                "institution": "中信证券",
+                "rating": "买入",
+                "publish_date": "20260301",
+            }
+        )
         repo.save_analysis(
             ts_code="000001.SZ",
             publish_date="20260301",

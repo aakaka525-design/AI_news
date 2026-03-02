@@ -1,16 +1,21 @@
 """Tests for research report rule-based extraction."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from src.ai_engine.report_parser import (
-    extract_target_price_from_title,
-    extract_rating_change,
-    extract_key_points,
-    extract_risk_factors,
+    analyze_and_save_reports,
     analyze_report_rule_based,
     analyze_report_with_llm,
+    extract_key_points,
+    extract_rating_change,
+    extract_risk_factors,
+    extract_target_price_from_title,
 )
+from src.database.repositories.report import ReportRepository
 
 
 class TestExtractTargetPrice:
@@ -152,12 +157,6 @@ class TestAnalyzeReportRuleBased:
         assert result["sentiment"] == "negative"  # empty rating -> negative
 
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from src.database.repositories.report import ReportRepository
-from src.ai_engine.report_parser import analyze_and_save_reports
-
-
 class TestAnalyzeAndSave:
     @pytest.fixture()
     def repo(self, tmp_path):
@@ -169,14 +168,16 @@ class TestAnalyzeAndSave:
         return repository
 
     def test_analyze_and_save_populates_fields(self, repo):
-        repo.upsert_report({
-            "ts_code": "000001.SZ",
-            "stock_name": "平安银行",
-            "title": "目标价：50元，业绩超预期，维持买入",
-            "institution": "中信证券",
-            "rating": "买入",
-            "publish_date": "20260301",
-        })
+        repo.upsert_report(
+            {
+                "ts_code": "000001.SZ",
+                "stock_name": "平安银行",
+                "title": "目标价：50元，业绩超预期，维持买入",
+                "institution": "中信证券",
+                "rating": "买入",
+                "publish_date": "20260301",
+            }
+        )
         results = analyze_and_save_reports(repo)
         assert len(results) == 1
         assert results[0]["target_price"] == 50.0
@@ -215,11 +216,13 @@ class TestAnalyzeReportWithLLM:
 
         with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
             with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
-                result = await analyze_report_with_llm({
-                    "report_title": "业绩超预期",
-                    "institution": "中信证券",
-                    "rating": "买入",
-                })
+                result = await analyze_report_with_llm(
+                    {
+                        "report_title": "业绩超预期",
+                        "institution": "中信证券",
+                        "rating": "买入",
+                    }
+                )
 
         assert result is not None
         assert result["core_logic"] == "增长强劲"
@@ -233,11 +236,13 @@ class TestAnalyzeReportWithLLM:
 
         with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
             with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
-                result = await analyze_report_with_llm({
-                    "report_title": "test",
-                    "institution": "test",
-                    "rating": "买入",
-                })
+                result = await analyze_report_with_llm(
+                    {
+                        "report_title": "test",
+                        "institution": "test",
+                        "rating": "买入",
+                    }
+                )
         assert result is None
 
     @pytest.mark.asyncio
@@ -256,10 +261,12 @@ class TestAnalyzeReportWithLLM:
 
         with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
             with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
-                result = await analyze_report_with_llm({
-                    "report_title": "test",
-                    "institution": "test",
-                    "rating": "买入",
-                })
+                result = await analyze_report_with_llm(
+                    {
+                        "report_title": "test",
+                        "institution": "test",
+                        "rating": "买入",
+                    }
+                )
         assert result is not None
         assert result["core_logic"] == "test"
