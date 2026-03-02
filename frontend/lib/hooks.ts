@@ -1,0 +1,57 @@
+import { useQuery } from "@tanstack/react-query";
+import {
+  fetchHealth,
+  fetchHotspots,
+  fetchSentimentStats,
+  fetchAnomalies,
+  fetchAnomalyStats,
+  fetchReports,
+  fetchRatingStats,
+  fetchNews,
+  fetchRss,
+  fetchSchedulerJobs,
+  fetchFreshness,
+  fetchTradingDay,
+} from "./api";
+
+export const useHealth = () =>
+  useQuery({ queryKey: ["health"], queryFn: fetchHealth, refetchInterval: 60_000 });
+
+export const useHotspots = () =>
+  useQuery({ queryKey: ["hotspots"], queryFn: fetchHotspots });
+
+export const useSentimentStats = () =>
+  useQuery({ queryKey: ["sentiment-stats"], queryFn: fetchSentimentStats });
+
+export const useAnomalies = (stockCode?: string, days = 7, limit = 50) =>
+  useQuery({
+    queryKey: ["anomalies", stockCode, days, limit],
+    queryFn: () => fetchAnomalies(stockCode, days, limit),
+  });
+
+export const useAnomalyStats = () =>
+  useQuery({ queryKey: ["anomaly-stats"], queryFn: fetchAnomalyStats });
+
+export const useReports = (stockCode?: string, limit = 20) =>
+  useQuery({
+    queryKey: ["reports", stockCode, limit],
+    queryFn: () => fetchReports(stockCode, limit),
+  });
+
+export const useRatingStats = () =>
+  useQuery({ queryKey: ["rating-stats"], queryFn: fetchRatingStats });
+
+export const useNews = (limit = 50) =>
+  useQuery({ queryKey: ["news", limit], queryFn: () => fetchNews(limit) });
+
+export const useRss = (limit = 50) =>
+  useQuery({ queryKey: ["rss", limit], queryFn: () => fetchRss(limit) });
+
+export const useSchedulerJobs = () =>
+  useQuery({ queryKey: ["scheduler-jobs"], queryFn: fetchSchedulerJobs });
+
+export const useFreshness = () =>
+  useQuery({ queryKey: ["freshness"], queryFn: fetchFreshness });
+
+export const useTradingDay = (date?: string) =>
+  useQuery({ queryKey: ["trading-day", date], queryFn: () => fetchTradingDay(date) });

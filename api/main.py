@@ -48,6 +48,18 @@ _repo = NewsRepository(_Session)
 
 app = FastAPI(title="AI News Dashboard", version="2.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://frontend:3000",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from api.middleware import register_exception_handlers
 register_exception_handlers(app)
 
