@@ -2,10 +2,12 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.analysis.technical import (
     atr,
     bollinger_bands,
+    compute_all,
     ema,
     kdj,
     macd,
@@ -198,3 +200,54 @@ class TestVolumeRatio:
         result = volume_ratio(volumes, period=5)
         valid = result.dropna()
         np.testing.assert_array_almost_equal(valid.values, 1.0)
+
+
+class TestComputeAll:
+    @pytest.fixture()
+    def sample_df(self):
+        np.random.seed(42)
+        n = 50
+        close = pd.Series(np.cumsum(np.random.randn(n)) + 100)
+        return pd.DataFrame(
+            {
+                "open": close + np.random.uniform(-1, 1, n),
+                "high": close + np.abs(np.random.randn(n)),
+                "low": close - np.abs(np.random.randn(n)),
+                "close": close,
+                "volume": np.random.uniform(1e6, 5e6, n),
+            }
+        )
+
+    def test_returns_all_indicator_columns(self, sample_df):
+        result = compute_all(sample_df)
+        expected_cols = [
+            "ema12",
+            "ema26",
+            "macd_dif",
+            "macd_dea",
+            "macd_hist",
+            "rsi6",
+            "rsi12",
+            "rsi24",
+            "kdj_k",
+            "kdj_d",
+            "kdj_j",
+            "boll_upper",
+            "boll_mid",
+            "boll_lower",
+            "atr14",
+            "obv",
+            "williams_r",
+            "volume_ratio",
+        ]
+        for col in expected_cols:
+            assert col in result.columns, f"缺少列: {col}"
+
+    def test_does_not_modify_input(self, sample_df):
+        original_cols = list(sample_df.columns)
+        compute_all(sample_df)
+        assert list(sample_df.columns) == original_cols
+
+    def test_output_length_matches_input(self, sample_df):
+        result = compute_all(sample_df)
+        assert len(result) == len(sample_df)

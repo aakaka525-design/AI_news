@@ -171,3 +171,56 @@ def volume_ratio(volumes: pd.Series, period: int = 5) -> pd.Series:
     """量比 = 当日成交量 / 过去 N 日平均成交量。"""
     avg = volumes.rolling(window=period, min_periods=period).mean()
     return volumes / avg
+
+
+# ===================================================================
+# 聚合：一次性计算所有指标
+# ===================================================================
+
+
+def compute_all(df: pd.DataFrame) -> pd.DataFrame:
+    """计算所有技术指标，返回新 DataFrame。
+
+    输入 DataFrame 必须包含列：open, high, low, close, volume
+
+    Returns:
+        包含所有指标列的新 DataFrame（保留原始列）
+    """
+    result = df.copy()
+
+    c = df["close"]
+    h = df["high"]
+    low_s = df["low"]
+    v = df["volume"]
+
+    # EMA
+    result["ema12"] = ema(c, 12)
+    result["ema26"] = ema(c, 26)
+
+    # MACD
+    result["macd_dif"], result["macd_dea"], result["macd_hist"] = macd(c)
+
+    # RSI
+    result["rsi6"] = rsi(c, 6)
+    result["rsi12"] = rsi(c, 12)
+    result["rsi24"] = rsi(c, 24)
+
+    # KDJ
+    result["kdj_k"], result["kdj_d"], result["kdj_j"] = kdj(h, low_s, c)
+
+    # 布林带
+    result["boll_upper"], result["boll_mid"], result["boll_lower"] = bollinger_bands(c)
+
+    # ATR
+    result["atr14"] = atr(h, low_s, c, 14)
+
+    # OBV
+    result["obv"] = obv(c, v)
+
+    # 威廉指标
+    result["williams_r"] = williams_r(h, low_s, c)
+
+    # 量比
+    result["volume_ratio"] = volume_ratio(v)
+
+    return result
