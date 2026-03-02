@@ -1,5 +1,5 @@
 """Database engine factory tests."""
-import pytest
+
 from src.database.engine import create_engine_from_url, get_session_factory, is_postgresql
 
 
@@ -29,6 +29,4 @@ def test_get_session_factory(tmp_path):
     SessionFactory = get_session_factory(engine)
     with SessionFactory() as session:
         assert session is not None
-        session.execute(
-            __import__("sqlalchemy").text("SELECT 1")
-        )
+        session.execute(__import__("sqlalchemy").text("SELECT 1"))

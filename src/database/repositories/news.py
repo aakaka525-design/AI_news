@@ -29,27 +29,27 @@ def _utcnow() -> datetime:
     """Return the current UTC time (timezone-aware)."""
     return datetime.now(timezone.utc)
 
+
 from sqlalchemy import (
     Column,
     DateTime,
     Float,
     Index,
     Integer,
-    String,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-
 # ------------------------------------------------------------------
 # ORM models (local to the news database — NOT the stocks database)
 # ------------------------------------------------------------------
 
+
 class _Base(DeclarativeBase):
     """Private declarative base for news-database tables."""
+
     pass
 
 
@@ -66,9 +66,7 @@ class News(_Base):
     keywords = Column(Text, nullable=True)
     received_at = Column(DateTime, default=_utcnow)
 
-    __table_args__ = (
-        Index("idx_received_at", received_at.desc()),
-    )
+    __table_args__ = (Index("idx_received_at", received_at.desc()),)
 
 
 class AnalysisResult(_Base):
@@ -83,9 +81,7 @@ class AnalysisResult(_Base):
     opportunities = Column(Text, nullable=True)
     analyzed_at = Column(DateTime, default=_utcnow)
 
-    __table_args__ = (
-        Index("idx_analysis_date", "date"),
-    )
+    __table_args__ = (Index("idx_analysis_date", "date"),)
 
 
 class RssItem(_Base):
@@ -106,14 +102,13 @@ class RssItem(_Base):
     ai_summary = Column(Text, nullable=True)
     analyzed_at = Column(DateTime, nullable=True)
 
-    __table_args__ = (
-        Index("idx_rss_fetched", fetched_at.desc()),
-    )
+    __table_args__ = (Index("idx_rss_fetched", fetched_at.desc()),)
 
 
 # ------------------------------------------------------------------
 # Repository
 # ------------------------------------------------------------------
+
 
 class NewsRepository:
     """Data-access layer for the news dashboard database.
@@ -182,13 +177,15 @@ class NewsRepository:
                         parsed_cleaned = json.loads(r.cleaned_data)
                     except (json.JSONDecodeError, TypeError):
                         pass
-                results.append({
-                    "id": r.id,
-                    "title": r.title,
-                    "content": r.content,
-                    "cleaned_data": parsed_cleaned,
-                    "received_at": r.received_at.isoformat() if r.received_at else None,
-                })
+                results.append(
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "content": r.content,
+                        "cleaned_data": parsed_cleaned,
+                        "received_at": r.received_at.isoformat() if r.received_at else None,
+                    }
+                )
             return results
 
     def get_news_count(self) -> int:
@@ -254,33 +251,20 @@ class NewsRepository:
                 .limit(limit)
                 .all()
             )
-            return [
-                {"id": r.id, "title": r.title, "content": r.content}
-                for r in rows
-            ]
+            return [{"id": r.id, "title": r.title, "content": r.content} for r in rows]
 
     def get_recent_news_for_task(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return the latest news rows (id, title, content[:200]) for the scheduled task."""
         with self.Session() as session:
-            rows = (
-                session.query(News)
-                .order_by(News.id.desc())
-                .limit(limit)
-                .all()
-            )
+            rows = session.query(News).order_by(News.id.desc()).limit(limit).all()
             return [
-                {"id": r.id, "title": r.title, "content": (r.content or "")[:200]}
-                for r in rows
+                {"id": r.id, "title": r.title, "content": (r.content or "")[:200]} for r in rows
             ]
 
     def get_hotspot_stats(self, top_n: int = 20) -> list[tuple[str, int]]:
         """Aggregate hotspot keywords across all news and return the *top_n* most common."""
         with self.Session() as session:
-            rows = (
-                session.query(News.hotspots)
-                .filter(News.hotspots.isnot(None))
-                .all()
-            )
+            rows = session.query(News.hotspots).filter(News.hotspots.isnot(None)).all()
         counter: Counter = Counter()
         for (hotspots_str,) in rows:
             if hotspots_str:
@@ -363,11 +347,7 @@ class NewsRepository:
             # Check for duplicate link at the application level so we can
             # return None gracefully instead of raising an IntegrityError.
             if link:
-                exists = (
-                    session.query(RssItem.id)
-                    .filter(RssItem.link == link)
-                    .first()
-                )
+                exists = session.query(RssItem.id).filter(RssItem.link == link).first()
                 if exists:
                     return None
             row = RssItem(
@@ -417,11 +397,7 @@ class NewsRepository:
         """
         cutoff = _utcnow() - timedelta(hours=hours)
         with self.Session() as session:
-            rows = (
-                session.query(RssItem.title)
-                .filter(RssItem.fetched_at > cutoff)
-                .all()
-            )
+            rows = session.query(RssItem.title).filter(RssItem.fetched_at > cutoff).all()
             return [r.title for r in rows]
 
     def update_rss_sentiment(
@@ -469,12 +445,14 @@ class NewsRepository:
             analyzed = (
                 session.query(func.count(RssItem.id))
                 .filter(RssItem.sentiment_score.isnot(None))
-                .scalar() or 0
+                .scalar()
+                or 0
             )
             pending = (
                 session.query(func.count(RssItem.id))
                 .filter(RssItem.sentiment_score.is_(None))
-                .scalar() or 0
+                .scalar()
+                or 0
             )
 
             # Distribution: positive / neutral / negative

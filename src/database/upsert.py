@@ -1,6 +1,7 @@
 """Database-agnostic upsert utilities using SQLAlchemy dialects."""
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 
 def upsert_row(session, table, data: dict) -> bool:

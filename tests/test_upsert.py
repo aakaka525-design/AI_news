@@ -1,9 +1,10 @@
 """Database-agnostic upsert tests."""
-import pytest
-from sqlalchemy import create_engine, Column, String, Float, Integer
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-from src.database.upsert import upsert_row, upsert_batch
+import pytest
+from sqlalchemy import Column, Float, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from src.database.upsert import upsert_batch, upsert_row
 
 
 class Base(DeclarativeBase):
@@ -30,29 +31,44 @@ def session(tmp_path):
 
 class TestUpsertRow:
     def test_inserts_new_row(self, session):
-        result = upsert_row(session, TestStock.__table__,
-            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0, "vol": 100.0})
+        result = upsert_row(
+            session,
+            TestStock.__table__,
+            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0, "vol": 100.0},
+        )
         session.commit()
         assert result is True
         row = session.execute(TestStock.__table__.select()).fetchone()
         assert row.close == 10.0
 
     def test_updates_existing_row(self, session):
-        upsert_row(session, TestStock.__table__,
-            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0, "vol": 100.0})
+        upsert_row(
+            session,
+            TestStock.__table__,
+            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0, "vol": 100.0},
+        )
         session.commit()
-        upsert_row(session, TestStock.__table__,
-            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 11.0, "vol": 200.0})
+        upsert_row(
+            session,
+            TestStock.__table__,
+            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 11.0, "vol": 200.0},
+        )
         session.commit()
         rows = session.execute(TestStock.__table__.select()).fetchall()
         assert len(rows) == 1
         assert rows[0].close == 11.0
 
     def test_different_keys_create_different_rows(self, session):
-        upsert_row(session, TestStock.__table__,
-            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0})
-        upsert_row(session, TestStock.__table__,
-            {"ts_code": "000001.SZ", "trade_date": "20260302", "close": 11.0})
+        upsert_row(
+            session,
+            TestStock.__table__,
+            {"ts_code": "000001.SZ", "trade_date": "20260301", "close": 10.0},
+        )
+        upsert_row(
+            session,
+            TestStock.__table__,
+            {"ts_code": "000001.SZ", "trade_date": "20260302", "close": 11.0},
+        )
         session.commit()
         rows = session.execute(TestStock.__table__.select()).fetchall()
         assert len(rows) == 2

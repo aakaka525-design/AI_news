@@ -4,21 +4,17 @@ import datetime as datetime_mod
 import json
 
 import pytest
-from sqlalchemy import text
 
 from src.database.engine import create_engine_from_url, get_session_factory
 from src.database.repositories.news import (
-    AnalysisResult,
-    News,
     NewsRepository,
-    RssItem,
     _Base,
 )
-
 
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
+
 
 @pytest.fixture()
 def engine():
@@ -40,6 +36,7 @@ def repo(engine):
 # create_tables
 # ------------------------------------------------------------------
 
+
 class TestCreateTables:
     def test_create_tables_is_idempotent(self, engine):
         Session = get_session_factory(engine)
@@ -52,6 +49,7 @@ class TestCreateTables:
 # ------------------------------------------------------------------
 # news table
 # ------------------------------------------------------------------
+
 
 class TestInsertNews:
     def test_insert_returns_positive_id(self, repo):
@@ -214,6 +212,7 @@ class TestGetHotspotStats:
 # analysis_results table
 # ------------------------------------------------------------------
 
+
 class TestInsertAnalysis:
     def test_returns_positive_id(self, repo):
         aid = repo.insert_analysis("2026-01-01", 10, "summary", [{"title": "opp1"}])
@@ -255,6 +254,7 @@ class TestGetAnalysisById:
 # rss_items table
 # ------------------------------------------------------------------
 
+
 class TestInsertRssItem:
     def test_returns_positive_id(self, repo):
         rid = repo.insert_rss_item("RSS Title", link="http://example.com/1")
@@ -273,7 +273,7 @@ class TestInsertRssItem:
         assert id2 is not None
 
     def test_all_fields(self, repo):
-        rid = repo.insert_rss_item(
+        repo.insert_rss_item(
             title="News",
             link="http://example.com/full",
             summary="A summary",
@@ -316,8 +316,16 @@ class TestGetRssItems:
         repo.insert_rss_item("T", link="http://example.com/keys")
         item = repo.get_rss_items()[0]
         expected_keys = {
-            "id", "title", "link", "summary", "published", "source",
-            "category", "fetched_at", "sentiment_score", "ai_summary",
+            "id",
+            "title",
+            "link",
+            "summary",
+            "published",
+            "source",
+            "category",
+            "fetched_at",
+            "sentiment_score",
+            "ai_summary",
             "analyzed_at",
         }
         assert set(item.keys()) == expected_keys
@@ -350,7 +358,7 @@ class TestUpdateRssSentiment:
 
 class TestGetUnanalyzedRss:
     def test_returns_only_unanalyzed(self, repo):
-        r1 = repo.insert_rss_item("Unanalyzed", link="http://u.com")
+        repo.insert_rss_item("Unanalyzed", link="http://u.com")
         r2 = repo.insert_rss_item("Analyzed", link="http://a.com")
         repo.update_rss_sentiment(r2, 0.5)
         items = repo.get_unanalyzed_rss()
@@ -394,6 +402,7 @@ class TestGetRssSentimentStats:
 # ------------------------------------------------------------------
 # Health check
 # ------------------------------------------------------------------
+
 
 class TestHealthCheck:
     def test_returns_true_when_healthy(self, repo):

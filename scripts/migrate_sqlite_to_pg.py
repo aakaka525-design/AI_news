@@ -6,13 +6,14 @@ Usage:
 
 Copies all tables from SQLite to PostgreSQL, with progress reporting.
 """
+
 import argparse
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
-from sqlalchemy import create_engine, text, inspect
+from sqlalchemy import create_engine, inspect, text
 
 
 def get_sqlite_tables(sqlite_path: str) -> list[str]:
@@ -34,9 +35,7 @@ def get_row_count(sqlite_path: str, table: str) -> int:
     return count
 
 
-def migrate_table(
-    sqlite_path: str, pg_engine, table: str, batch_size: int = 1000
-) -> dict:
+def migrate_table(sqlite_path: str, pg_engine, table: str, batch_size: int = 1000) -> dict:
     """Migrate a single table from SQLite to PostgreSQL."""
     conn = sqlite3.connect(sqlite_path)
     conn.row_factory = sqlite3.Row
@@ -118,17 +117,13 @@ def migrate(sqlite_path: str, pg_url: str, tables: list[str] = None) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate SQLite to PostgreSQL")
-    parser.add_argument(
-        "--sqlite-path", default="data/stocks.db", help="SQLite database path"
-    )
+    parser.add_argument("--sqlite-path", default="data/stocks.db", help="SQLite database path")
     parser.add_argument(
         "--pg-url",
         default="postgresql://ainews:ainews_dev@localhost:5432/ainews",
         help="PostgreSQL connection URL",
     )
-    parser.add_argument(
-        "--tables", nargs="*", help="Specific tables to migrate (default: all)"
-    )
+    parser.add_argument("--tables", nargs="*", help="Specific tables to migrate (default: all)")
     args = parser.parse_args()
 
     if not Path(args.sqlite_path).exists():
