@@ -11,24 +11,25 @@ Covers:
 - clean_raw_data: end-to-end structured output
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 from src.analysis.cleaner import (
     CleanedData,
     ExtractedFact,
-    remove_noise,
-    extract_time,
-    extract_location,
-    extract_keywords,
-    identify_hotspots,
     clean_raw_data,
+    extract_keywords,
+    extract_location,
+    extract_time,
+    identify_hotspots,
+    remove_noise,
 )
-
 
 # ============================================================
 # TestRemoveNoise
 # ============================================================
+
 
 class TestRemoveNoise:
     """Tests for remove_noise()."""
@@ -81,6 +82,7 @@ class TestRemoveNoise:
 # TestExtractTime
 # ============================================================
 
+
 class TestExtractTime:
     """Tests for extract_time()."""
 
@@ -114,6 +116,7 @@ class TestExtractTime:
 # TestExtractLocation
 # ============================================================
 
+
 class TestExtractLocation:
     """Tests for extract_location()."""
 
@@ -141,6 +144,7 @@ class TestExtractLocation:
 # ============================================================
 # TestIdentifyHotspots
 # ============================================================
+
 
 class TestIdentifyHotspots:
     """Tests for identify_hotspots()."""
@@ -183,6 +187,7 @@ class TestIdentifyHotspots:
 # TestExtractKeywords
 # ============================================================
 
+
 class TestExtractKeywords:
     """Tests for extract_keywords()."""
 
@@ -224,6 +229,7 @@ class TestExtractKeywords:
 # ============================================================
 # TestCleanRawData
 # ============================================================
+
 
 class TestCleanRawData:
     """Tests for clean_raw_data()."""

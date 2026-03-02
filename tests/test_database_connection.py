@@ -1,20 +1,20 @@
 """Database connection module tests (P0)."""
+
 import sqlite3
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
 
 from src.database.connection import (
-    get_connection,
-    insert_validated,
-    batch_insert_validated,
-    validate_and_create,
-    _object_type,
-    _table_exists,
     _create_or_replace_view,
     _ensure_compat_views,
+    _object_type,
+    _table_exists,
+    batch_insert_validated,
+    get_connection,
+    insert_validated,
+    validate_and_create,
 )
 
 
@@ -293,9 +293,7 @@ class TestEnsureCompatViews:
 
     def test_creates_stocks_view_from_ts_stock_basic(self):
         conn = self._make_conn()
-        conn.execute(
-            "CREATE TABLE ts_stock_basic (symbol TEXT, name TEXT, updated_at TEXT)"
-        )
+        conn.execute("CREATE TABLE ts_stock_basic (symbol TEXT, name TEXT, updated_at TEXT)")
         _ensure_compat_views(conn)
         assert _object_type(conn, "stocks") == "view"
         conn.close()
@@ -412,9 +410,7 @@ class TestEnsureCompatViews:
     def test_creates_sectors_from_ts_ths_index(self):
         conn = self._make_conn()
         conn.execute(
-            "CREATE TABLE ts_ths_index ("
-            "  ts_code TEXT, name TEXT, type TEXT, updated_at TEXT"
-            ")"
+            "CREATE TABLE ts_ths_index (  ts_code TEXT, name TEXT, type TEXT, updated_at TEXT)"
         )
         _ensure_compat_views(conn)
         assert _object_type(conn, "sectors") == "view"
@@ -425,20 +421,14 @@ class TestEnsureCompatViews:
         conn.execute(
             "CREATE TABLE ts_ths_index (ts_code TEXT, name TEXT, type TEXT, updated_at TEXT)"
         )
-        conn.execute(
-            "CREATE TABLE ts_ths_member (ts_code TEXT, con_code TEXT)"
-        )
+        conn.execute("CREATE TABLE ts_ths_member (ts_code TEXT, con_code TEXT)")
         _ensure_compat_views(conn)
         assert _object_type(conn, "sector_stocks") == "view"
         conn.close()
 
     def test_creates_sector_daily_rank_from_ts_ths_daily(self):
         conn = self._make_conn()
-        conn.execute(
-            "CREATE TABLE ts_ths_daily ("
-            "  ts_code TEXT, trade_date TEXT, pct_change REAL"
-            ")"
-        )
+        conn.execute("CREATE TABLE ts_ths_daily (  ts_code TEXT, trade_date TEXT, pct_change REAL)")
         # Also need ts_ths_index for the LEFT JOIN in the view
         conn.execute(
             "CREATE TABLE ts_ths_index (ts_code TEXT, name TEXT, type TEXT, updated_at TEXT)"
@@ -463,9 +453,7 @@ class TestEnsureCompatViews:
         """On a completely empty database, no views should be created."""
         conn = self._make_conn()
         _ensure_compat_views(conn)
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='view'"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='view'").fetchall()
         assert len(rows) == 0
         conn.close()
 
@@ -474,9 +462,7 @@ class TestEnsureCompatViews:
         conn = self._make_conn()
         conn.execute("CREATE TABLE ts_daily (id INTEGER)")
         conn.execute("CREATE TABLE ts_weekly (id INTEGER)")
-        conn.execute(
-            "CREATE TABLE ts_stock_basic (symbol TEXT, name TEXT, updated_at TEXT)"
-        )
+        conn.execute("CREATE TABLE ts_stock_basic (symbol TEXT, name TEXT, updated_at TEXT)")
         conn.execute("CREATE TABLE stocks (code TEXT, name TEXT)")
         _ensure_compat_views(conn)
         assert _object_type(conn, "ts_weekly") == "table"

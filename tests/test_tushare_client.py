@@ -1,12 +1,11 @@
 """Tushare client tests (P0) -- tests decorators and adapter patterns without real API calls."""
+
 import time
-from io import StringIO
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.utils.rate_limiter import TokenBucket, rate_limit
-from src.utils.retry import async_retry, retry, RetryableRequest, log_retry
+from src.utils.retry import RetryableRequest, async_retry, log_retry, retry
 
 
 class TestRateLimitDecorator:

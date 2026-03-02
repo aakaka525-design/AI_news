@@ -1,5 +1,7 @@
 """Pydantic response models for API documentation."""
+
 from typing import Optional
+
 from pydantic import BaseModel
 
 

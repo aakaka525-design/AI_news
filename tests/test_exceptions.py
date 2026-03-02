@@ -1,11 +1,11 @@
 """Exception hierarchy tests."""
-import pytest
+
 from src.exceptions import (
-    AppError,
-    DataFetchError,
     AnalysisError,
-    DatabaseError,
+    AppError,
     ConfigError,
+    DatabaseError,
+    DataFetchError,
 )
 
 

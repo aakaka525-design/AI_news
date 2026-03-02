@@ -1,4 +1,5 @@
 """Verify that bare 'except Exception: pass' patterns are eliminated."""
+
 import ast
 from pathlib import Path
 

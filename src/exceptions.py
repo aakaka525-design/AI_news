@@ -11,6 +11,7 @@ AppError
 
 class AppError(Exception):
     """Base exception for all AI_news errors."""
+
     pass
 
 
@@ -41,4 +42,5 @@ class DatabaseError(AppError):
 
 class ConfigError(AppError):
     """Raised when required configuration is missing or invalid."""
+
     pass

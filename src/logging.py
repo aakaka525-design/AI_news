@@ -6,6 +6,7 @@ Usage:
     logger = get_logger(__name__)
     logger.info("fetching data", stock="000001.SZ")
 """
+
 import structlog
 
 

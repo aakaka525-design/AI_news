@@ -8,11 +8,11 @@ so every test run is fully isolated.
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 import pytest_asyncio
-import httpx
 from httpx import ASGITransport
 
 
@@ -88,6 +88,7 @@ async def client(tmp_path: Path):
 # GET /health
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_health_returns_200(client):
     resp = await client.get("/health")
@@ -109,6 +110,7 @@ async def test_health_body_structure(client):
 # ---------------------------------------------------------------------------
 # POST /webhook/receive
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_webhook_receive_success(client):
@@ -142,6 +144,7 @@ async def test_webhook_receive_returns_hotspots_and_keywords(client):
 # ---------------------------------------------------------------------------
 # GET /api/news
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_news_empty_db(client):
@@ -188,6 +191,7 @@ async def test_get_news_limit_param(client):
 # POST /api/clean
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_clean_endpoint_success(client):
     resp = await client.post(
@@ -215,6 +219,7 @@ async def test_clean_endpoint_missing_fields(client):
 # GET / (homepage)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_homepage_returns_html(client):
     resp = await client.get("/")
@@ -233,6 +238,7 @@ async def test_homepage_contains_title(client):
 # ---------------------------------------------------------------------------
 # GET /api/hotspots
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_hotspots_empty(client):
@@ -258,6 +264,7 @@ async def test_hotspots_after_webhook(client):
 # ---------------------------------------------------------------------------
 # GET /api/facts/{news_id}
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_facts_not_found(client):
@@ -285,6 +292,7 @@ async def test_facts_after_webhook(client):
 # ---------------------------------------------------------------------------
 # Concurrency / idempotency quick-checks
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_multiple_webhooks_sequential(client):

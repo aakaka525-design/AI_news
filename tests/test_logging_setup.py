@@ -1,6 +1,7 @@
 """Structured logging setup tests."""
+
 import json
-import pytest
+
 from src.logging import get_logger, setup_logging
 
 

@@ -1,10 +1,9 @@
 """Unified exception handling middleware for FastAPI."""
-import json
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from src.exceptions import AppError, DataFetchError, AnalysisError, DatabaseError
+from src.exceptions import AnalysisError, AppError, DatabaseError, DataFetchError
 from src.logging import get_logger
 
 logger = get_logger("api.middleware")
@@ -42,7 +41,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.error("data_fetch_error", error=str(exc), source=exc.source, code=exc.code)
         return JSONResponse(
             status_code=502,
-            content={"error": str(exc), "type": "DataFetchError", "source": exc.source, "code": exc.code},
+            content={
+                "error": str(exc),
+                "type": "DataFetchError",
+                "source": exc.source,
+                "code": exc.code,
+            },
         )
 
     @app.exception_handler(DatabaseError)

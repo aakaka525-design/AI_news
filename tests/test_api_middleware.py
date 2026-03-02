@@ -1,10 +1,11 @@
 """API exception middleware tests."""
+
 import pytest
-from httpx import AsyncClient, ASGITransport
 from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
 from api.middleware import register_exception_handlers
-from src.exceptions import AppError, DataFetchError, DatabaseError
+from src.exceptions import AppError, DatabaseError, DataFetchError
 
 
 @pytest.fixture

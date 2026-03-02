@@ -1,11 +1,11 @@
 """API response schema tests."""
-import pytest
+
 from api.schemas import (
-    HealthResponse,
-    NewsListResponse,
-    NewsItem,
-    WebhookResponse,
     ErrorResponse,
+    HealthResponse,
+    NewsItem,
+    NewsListResponse,
+    WebhookResponse,
 )
 
 
