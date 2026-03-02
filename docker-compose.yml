@@ -70,6 +70,21 @@ services:
       # 代理配置（可选）
       - PROXY_URI=${PROXY_URI:-}
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ainews_frontend
+    restart: unless-stopped
+    networks:
+      - news_network
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - dashboard
+
   # NocoDB - 数据库可视化管理界面
   nocodb:
     image: nocodb/nocodb:latest
