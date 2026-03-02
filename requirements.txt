@@ -1,0 +1,41 @@
+# AI News - 依赖列表
+
+# 数据获取
+akshare>=1.10.0
+aiohttp>=3.9.0
+requests>=2.31.0
+tushare>=1.4.0
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0,<2.0.0
+pydantic>=2.0.0
+
+# 数据库
+# SQLite 内置
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+
+# Web 框架
+fastapi>=0.100.0
+uvicorn>=0.23.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+
+# AI
+openai>=1.0.0
+
+# 调度
+schedule>=1.2.0
+apscheduler>=3.10.0
+
+# 文档渲染
+markdown>=3.6
+
+# RSS
+feedparser>=6.0.0
+
+# 工具
+python-dotenv>=1.0.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
