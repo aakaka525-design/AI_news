@@ -6,6 +6,7 @@ from src.ai_engine.report_parser import (
     extract_target_price_from_title,
     extract_rating_change,
     extract_key_points,
+    extract_risk_factors,
     analyze_report_rule_based,
 )
 
@@ -96,6 +97,30 @@ class TestExtractKeyPoints:
 
     def test_none_input(self):
         assert extract_key_points(None) == []
+
+
+class TestExtractRiskFactors:
+    def test_policy_risk(self):
+        factors = extract_risk_factors("政策风险可控，维持买入")
+        assert "政策风险" in factors
+
+    def test_competition_risk(self):
+        factors = extract_risk_factors("竞争加剧，关注盈利压力")
+        assert "竞争风险" in factors
+
+    def test_demand_risk(self):
+        factors = extract_risk_factors("下游需求不及预期")
+        assert "需求风险" in factors
+
+    def test_cost_risk(self):
+        factors = extract_risk_factors("原材料成本上升压力")
+        assert "成本风险" in factors
+
+    def test_no_risk(self):
+        assert extract_risk_factors("业绩超预期") == []
+
+    def test_none_input(self):
+        assert extract_risk_factors(None) == []
 
 
 class TestAnalyzeReportRuleBased:
