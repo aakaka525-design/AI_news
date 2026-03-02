@@ -24,34 +24,35 @@ def check_row_counts(sqlite_url: str, pg_url: str) -> dict:
     sqlite_engine = create_engine(sqlite_url)
     pg_engine = create_engine(pg_url)
 
-    sqlite_inspector = inspect(sqlite_engine)
-    pg_inspector = inspect(pg_engine)
+    try:
+        sqlite_inspector = inspect(sqlite_engine)
+        pg_inspector = inspect(pg_engine)
 
-    sqlite_tables = set(sqlite_inspector.get_table_names())
-    pg_tables = set(pg_inspector.get_table_names())
-    common_tables = sorted(sqlite_tables & pg_tables)
+        sqlite_tables = set(sqlite_inspector.get_table_names())
+        pg_tables = set(pg_inspector.get_table_names())
+        common_tables = sorted(sqlite_tables & pg_tables)
 
-    details: dict = {}
-    all_match = True
+        details: dict = {}
+        all_match = True
 
-    for table in common_tables:
-        with sqlite_engine.connect() as conn:
-            sqlite_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
-        with pg_engine.connect() as conn:
-            pg_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+        for table in common_tables:
+            with sqlite_engine.connect() as conn:
+                sqlite_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+            with pg_engine.connect() as conn:
+                pg_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
 
-        match = sqlite_count == pg_count
-        if not match:
-            all_match = False
+            match = sqlite_count == pg_count
+            if not match:
+                all_match = False
 
-        details[table] = {
-            "sqlite": sqlite_count,
-            "pg": pg_count,
-            "match": match,
-        }
-
-    sqlite_engine.dispose()
-    pg_engine.dispose()
+            details[table] = {
+                "sqlite": sqlite_count,
+                "pg": pg_count,
+                "match": match,
+            }
+    finally:
+        sqlite_engine.dispose()
+        pg_engine.dispose()
 
     return {"passed": all_match, "details": details}
 
@@ -70,72 +71,73 @@ def check_sample_data(sqlite_url: str, pg_url: str, sample_size: int = 100) -> d
     sqlite_engine = create_engine(sqlite_url)
     pg_engine = create_engine(pg_url)
 
-    sqlite_inspector = inspect(sqlite_engine)
-    pg_inspector = inspect(pg_engine)
+    try:
+        sqlite_inspector = inspect(sqlite_engine)
+        pg_inspector = inspect(pg_engine)
 
-    sqlite_tables = set(sqlite_inspector.get_table_names())
-    pg_tables = set(pg_inspector.get_table_names())
-    common_tables = sorted(sqlite_tables & pg_tables)
+        sqlite_tables = set(sqlite_inspector.get_table_names())
+        pg_tables = set(pg_inspector.get_table_names())
+        common_tables = sorted(sqlite_tables & pg_tables)
 
-    details: dict = {}
-    all_ok = True
+        details: dict = {}
+        all_ok = True
 
-    for table in common_tables:
-        # Determine primary key columns
-        pk_constraint = sqlite_inspector.get_pk_constraint(table)
-        pk_cols = pk_constraint.get("constrained_columns", [])
-        if not pk_cols:
-            # Skip tables without a primary key
-            details[table] = {"checked": 0, "mismatches": 0}
-            continue
-
-        # Get all column names
-        columns = [c["name"] for c in sqlite_inspector.get_columns(table)]
-
-        # Fetch all rows from SQLite for this table
-        col_list = ", ".join(f'"{c}"' for c in columns)
-        with sqlite_engine.connect() as conn:
-            rows = conn.execute(text(f'SELECT {col_list} FROM "{table}"')).fetchall()
-
-        if not rows:
-            details[table] = {"checked": 0, "mismatches": 0}
-            continue
-
-        # Sample up to sample_size rows
-        sampled = random.sample(rows, min(sample_size, len(rows)))
-
-        mismatches = 0
-        for row in sampled:
-            row_dict = dict(zip(columns, row))
-            # Build WHERE clause on primary key
-            where_parts = []
-            params = {}
-            for pk in pk_cols:
-                where_parts.append(f'"{pk}" = :pk_{pk}')
-                params[f"pk_{pk}"] = row_dict[pk]
-
-            where_clause = " AND ".join(where_parts)
-            with pg_engine.connect() as conn:
-                pg_row = conn.execute(
-                    text(f'SELECT {col_list} FROM "{table}" WHERE {where_clause}'),
-                    params,
-                ).fetchone()
-
-            if pg_row is None:
-                mismatches += 1
+        for table in common_tables:
+            # Determine primary key columns
+            pk_constraint = sqlite_inspector.get_pk_constraint(table)
+            pk_cols = pk_constraint.get("constrained_columns", [])
+            if not pk_cols:
+                # Skip tables without a primary key
+                details[table] = {"checked": 0, "mismatches": 0}
                 continue
 
-            pg_dict = dict(zip(columns, pg_row))
-            if row_dict != pg_dict:
-                mismatches += 1
+            # Get all column names
+            columns = [c["name"] for c in sqlite_inspector.get_columns(table)]
 
-        if mismatches > 0:
-            all_ok = False
+            # Fetch all rows from SQLite for this table
+            col_list = ", ".join(f'"{c}"' for c in columns)
+            with sqlite_engine.connect() as conn:
+                rows = conn.execute(text(f'SELECT {col_list} FROM "{table}"')).fetchall()
 
-        details[table] = {"checked": len(sampled), "mismatches": mismatches}
+            if not rows:
+                details[table] = {"checked": 0, "mismatches": 0}
+                continue
 
-    sqlite_engine.dispose()
-    pg_engine.dispose()
+            # Sample up to sample_size rows
+            sampled = random.sample(rows, min(sample_size, len(rows)))
+
+            mismatches = 0
+            with pg_engine.connect() as conn:
+                for row in sampled:
+                    row_dict = dict(zip(columns, row))
+                    # Build WHERE clause on primary key
+                    where_parts = []
+                    params = {}
+                    for pk in pk_cols:
+                        where_parts.append(f'"{pk}" = :pk_{pk}')
+                        params[f"pk_{pk}"] = row_dict[pk]
+
+                    where_clause = " AND ".join(where_parts)
+                    pg_row = conn.execute(
+                        text(f'SELECT {col_list} FROM "{table}" WHERE {where_clause}'),
+                        params,
+                    ).fetchone()
+
+                    if pg_row is None:
+                        mismatches += 1
+                        continue
+
+                    pg_dict = dict(zip(columns, pg_row))
+                    if row_dict != pg_dict:
+                        mismatches += 1
+
+            if mismatches > 0:
+                all_ok = False
+
+            details[table] = {"checked": len(sampled), "mismatches": mismatches}
+    finally:
+        sqlite_engine.dispose()
+        pg_engine.dispose()
 
     return {"passed": all_ok, "details": details}
 
@@ -198,33 +200,30 @@ def check_query_performance(pg_url: str, baseline_ms: float | None = None) -> di
     """
     engine = create_engine(pg_url)
     is_pg = pg_url.startswith("postgresql")
-
     queries = PG_QUERIES if is_pg else REPRESENTATIVE_QUERIES
-
-    # For SQLite, replace the sqlite_master query with a compatible version
-    if not is_pg:
-        queries = {
-            "count_all_tables": ("SELECT name FROM sqlite_master WHERE type='table'"),
-            "select_1": "SELECT 1",
-        }
 
     details: dict = {}
     all_ok = True
 
-    with engine.connect() as conn:
-        for name, sql in queries.items():
-            start = time.perf_counter()
-            try:
-                conn.execute(text(sql)).fetchall()
-            except Exception:
-                pass
-            elapsed_ms = (time.perf_counter() - start) * 1000.0
-            details[name] = {"ms": round(elapsed_ms, 2)}
+    try:
+        with engine.connect() as conn:
+            for name, sql in queries.items():
+                start = time.perf_counter()
+                try:
+                    conn.execute(text(sql)).fetchall()
+                except Exception:
+                    elapsed_ms = (time.perf_counter() - start) * 1000.0
+                    details[name] = {"ms": round(elapsed_ms, 2), "error": True}
+                    all_ok = False
+                    continue
+                elapsed_ms = (time.perf_counter() - start) * 1000.0
+                details[name] = {"ms": round(elapsed_ms, 2)}
 
-            if baseline_ms is not None and elapsed_ms > baseline_ms * 1.2:
-                all_ok = False
+                if baseline_ms is not None and elapsed_ms > baseline_ms * 1.2:
+                    all_ok = False
+    finally:
+        engine.dispose()
 
-    engine.dispose()
     return {"passed": all_ok, "details": details}
 
 
