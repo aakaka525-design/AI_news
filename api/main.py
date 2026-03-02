@@ -19,6 +19,9 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import markdown
 
+# 导入响应模型
+from api.schemas import NewsListResponse, WebhookResponse
+
 # 导入数据清洗模块
 from cleaner import clean_raw_data, clean_and_export, CleanedData
 
@@ -310,7 +313,7 @@ async def shutdown():
     print(f"⏹️ 调度器已停止")
 
 
-@app.post("/webhook/receive")
+@app.post("/webhook/receive", response_model=WebhookResponse)
 async def receive_webhook(payload: WebhookPayload):
     """
     接收 TrendRadar Webhook 推送
@@ -435,7 +438,7 @@ async def console(request: Request):
     return templates.TemplateResponse("console.html", {"request": request})
 
 
-@app.get("/api/news")
+@app.get("/api/news", response_model=NewsListResponse)
 async def api_news(limit: int = 50):
     """API - 获取新闻列表（含清洗数据）"""
     news_list = get_recent_news(limit=limit)
