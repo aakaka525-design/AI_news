@@ -229,6 +229,19 @@ def check_query_performance(pg_url: str, baseline_ms: float | None = None) -> di
 
 
 # ===================================================================
+# Gate 5: Grey period (manual)
+# ===================================================================
+# Gate 5 is a manual observation period (soak/grey period).
+# It is NOT automated. After gates 1-4 pass, operators should
+# monitor the system under dual-write for 3 trading days before
+# completing the cutover. During this period, verify:
+#   - No data discrepancies between SQLite and PostgreSQL
+#   - API response times remain stable
+#   - No new error patterns in logs
+# Only proceed with full cutover after the grey period passes.
+
+
+# ===================================================================
 # run_all_gates
 # ===================================================================
 

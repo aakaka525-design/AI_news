@@ -218,8 +218,26 @@ class TestApiRegression:
 
 
 # ===================================================================
-# Gate 4: Query performance (tested implicitly via run_all_gates)
+# Gate 4: Query performance
 # ===================================================================
+
+
+class TestQueryPerformance:
+    def test_query_performance_passes_within_baseline(self, identical_dbs):
+        from scripts.verify_migration import check_query_performance
+
+        _, pg_url = identical_dbs
+        result = check_query_performance(pg_url, baseline_ms=5000.0)
+        assert result["passed"] is True
+        assert len(result["details"]) > 0
+
+    def test_query_performance_fails_over_baseline(self, identical_dbs):
+        from scripts.verify_migration import check_query_performance
+
+        _, pg_url = identical_dbs
+        # Impossibly tight baseline should cause failure
+        result = check_query_performance(pg_url, baseline_ms=0.0001)
+        assert result["passed"] is False
 
 
 # ===================================================================
