@@ -41,11 +41,16 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - TZ=Asia/Shanghai
+      - DATABASE_URL=postgresql://ainews:ainews_dev@postgres:5432/ainews
+      - NEWS_DATABASE_URL=postgresql://ainews:ainews_dev@postgres:5432/ainews
       - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_PROVIDER=${AI_PROVIDER:-deepseek}
       - AI_MODEL=${AI_MODEL:-deepseek-chat}
       - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   rsshub:
     image: diygod/rsshub:latest
