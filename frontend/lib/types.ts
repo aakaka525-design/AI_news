@@ -102,6 +102,153 @@ export interface AnomalyStats {
   [signal_type: string]: number;
 }
 
+// ===== Stocks =====
+export interface StockBasicItem {
+  ts_code: string;
+  symbol: string;
+  name: string;
+  industry?: string;
+  market?: string;
+  area?: string;
+  list_date?: string;
+}
+
+export interface StockListResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  data: StockBasicItem[];
+}
+
+export interface ValuationItem {
+  trade_date: string;
+  pe?: number | null;
+  pe_ttm?: number | null;
+  pb?: number | null;
+  ps?: number | null;
+  total_mv?: number | null;
+  circ_mv?: number | null;
+  turnover_rate?: number | null;
+  volume_ratio?: number | null;
+}
+
+export interface StockProfileResponse {
+  ts_code: string;
+  symbol: string;
+  name: string;
+  industry?: string;
+  market?: string;
+  area?: string;
+  exchange?: string;
+  list_date?: string;
+  fullname?: string;
+  is_hs?: string;
+  valuation?: ValuationItem | null;
+}
+
+export interface StockDailyItem {
+  trade_date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  pre_close?: number;
+  change?: number;
+  pct_chg?: number;
+  vol?: number;
+  amount?: number;
+  turnover_rate?: number;
+}
+
+export interface StockDailyResponse {
+  data: StockDailyItem[];
+}
+
+export interface IndexItem {
+  ts_code: string;
+  trade_date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close: number;
+  pre_close?: number;
+  change?: number;
+  pct_chg: number;
+  vol?: number;
+  amount?: number;
+  up_count?: number | null;
+  down_count?: number | null;
+}
+
+export interface MarketOverviewResponse {
+  data: IndexItem[];
+}
+
+export interface MoneyFlowItem {
+  ts_code: string;
+  trade_date: string;
+  flow_type?: string;
+  buy_elg_amount?: number | null;
+  sell_elg_amount?: number | null;
+  buy_lg_amount?: number | null;
+  sell_lg_amount?: number | null;
+  net_mf_amount?: number | null;
+  net_mf_rate?: number | null;
+  north_amount?: number | null;
+  north_net?: number | null;
+}
+
+export interface MoneyFlowResponse {
+  data: MoneyFlowItem[];
+}
+
+export interface DragonTigerItem {
+  ts_code: string;
+  trade_date: string;
+  name?: string;
+  close?: number;
+  pct_chg?: number;
+  turnover_rate?: number;
+  amount?: number;
+  l_buy?: number;
+  l_sell?: number;
+  net_amount?: number;
+  net_rate?: number;
+  reason?: string;
+  inst_buy?: number | null;
+  inst_sell?: number | null;
+}
+
+export interface DragonTigerResponse {
+  data: DragonTigerItem[];
+}
+
+export interface SectorItem {
+  block_code: string;
+  block_name: string;
+  block_type?: string;
+  trade_date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  pct_chg?: number;
+  vol?: number;
+  amount?: number;
+  turnover_rate?: number;
+  lead_stock?: string;
+  up_count?: number | null;
+  down_count?: number | null;
+}
+
+export interface SectorResponse {
+  data: SectorItem[];
+}
+
+export interface IndustryListResponse {
+  data: string[];
+}
+
 // ===== Health =====
 export interface HealthResponse {
   status: "healthy" | "degraded";

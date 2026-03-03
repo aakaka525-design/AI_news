@@ -21,6 +21,14 @@ import {
   fetchResearchManual,
   detectAnomaliesManual,
   analyzeManual,
+  fetchStocks,
+  fetchStockIndustries,
+  fetchStockProfile,
+  fetchStockDaily,
+  fetchMarketOverview,
+  fetchMoneyFlow,
+  fetchDragonTiger,
+  fetchSectors,
 } from "./api";
 
 export const useHealth = () =>
@@ -108,3 +116,59 @@ export function useManualActions() {
 
 export const useTradingDay = (date?: string) =>
   useQuery({ queryKey: ["trading-day", date], queryFn: () => fetchTradingDay(date) });
+
+// ===== Stocks =====
+
+export const useStocks = (
+  page = 1,
+  pageSize = 20,
+  search?: string,
+  industry?: string,
+  market?: string,
+) =>
+  useQuery({
+    queryKey: ["stocks", page, pageSize, search, industry, market],
+    queryFn: () => fetchStocks(page, pageSize, search, industry, market),
+    placeholderData: (prev) => prev,
+  });
+
+export const useStockIndustries = () =>
+  useQuery({ queryKey: ["stock-industries"], queryFn: fetchStockIndustries });
+
+export const useStockProfile = (tsCode: string) =>
+  useQuery({
+    queryKey: ["stock-profile", tsCode],
+    queryFn: () => fetchStockProfile(tsCode),
+    enabled: !!tsCode,
+  });
+
+export const useStockDaily = (tsCode: string, limit = 250) =>
+  useQuery({
+    queryKey: ["stock-daily", tsCode, limit],
+    queryFn: () => fetchStockDaily(tsCode, undefined, undefined, limit),
+    enabled: !!tsCode,
+  });
+
+export const useMarketOverview = (tradeDate?: string) =>
+  useQuery({
+    queryKey: ["market-overview", tradeDate],
+    queryFn: () => fetchMarketOverview(tradeDate),
+  });
+
+export const useMoneyFlow = (tradeDate?: string, flowType?: string, tsCode?: string, limit = 50) =>
+  useQuery({
+    queryKey: ["money-flow", tradeDate, flowType, tsCode, limit],
+    queryFn: () => fetchMoneyFlow(tradeDate, flowType, tsCode, limit),
+  });
+
+export const useDragonTiger = (tradeDate?: string, tsCode?: string, limit = 50) =>
+  useQuery({
+    queryKey: ["dragon-tiger", tradeDate, tsCode, limit],
+    queryFn: () => fetchDragonTiger(tradeDate, tsCode, limit),
+  });
+
+export const useSectors = (blockType?: string, tradeDate?: string, limit = 50) =>
+  useQuery({
+    queryKey: ["sectors", blockType, tradeDate, limit],
+    queryFn: () => fetchSectors(blockType, tradeDate, limit),
+  });

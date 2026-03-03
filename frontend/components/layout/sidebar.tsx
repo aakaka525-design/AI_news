@@ -8,11 +8,19 @@ import {
   AlertTriangle,
   Settings,
   TrendingUp,
+  BarChart3,
+  Wallet,
+  Trophy,
+  Grid3X3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/market", label: "市场行情", icon: BarChart3 },
+  { href: "/flow", label: "资金流向", icon: Wallet },
+  { href: "/dragon", label: "龙虎榜", icon: Trophy },
+  { href: "/sector", label: "板块行情", icon: Grid3X3 },
   { href: "/news", label: "新闻中心", icon: Newspaper },
   { href: "/strategy/anomaly", label: "异常信号", icon: AlertTriangle },
   { href: "/settings", label: "系统设置", icon: Settings },

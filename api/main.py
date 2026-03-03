@@ -36,7 +36,8 @@ from api.scheduler import scheduler_manager, register_default_tasks
 # 导入数据库引擎和仓储层
 from src.database.engine import create_engine_from_url, get_session_factory
 from src.database.repositories.news import NewsRepository
-from config.settings import NEWS_DATABASE_URL
+from src.database.repositories.stock import StockRepository
+from config.settings import NEWS_DATABASE_URL, DATABASE_URL
 
 # ============================================================
 # 配置
@@ -48,6 +49,11 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 _engine = create_engine_from_url(NEWS_DATABASE_URL)
 _Session = get_session_factory(_engine)
 _repo = NewsRepository(_Session)
+
+# Stocks database (read-only)
+_stock_engine = create_engine_from_url(DATABASE_URL)
+_stock_Session = get_session_factory(_stock_engine)
+_stock_repo = StockRepository(_stock_Session)
 
 app = FastAPI(title="AI News Dashboard", version="2.0.0")
 
@@ -864,10 +870,10 @@ async def is_trading_day(date: str = None):
             get_latest_trading_day,
             is_trading_day as check_trading_day,
         )
-        
+
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
-        
+
         return {
             "date": date,
             "is_trading_day": check_trading_day(date),
@@ -875,3 +881,99 @@ async def is_trading_day(date: str = None):
         }
     except Exception as e:
         _raise_internal_error("trading day check failed", e)
+
+
+# ============================================================
+# 股票行情 API (stocks.db — 只读)
+# ============================================================
+
+
+@app.get("/api/stocks")
+async def get_stocks(
+    search: Optional[str] = None,
+    industry: Optional[str] = None,
+    market: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """股票列表（搜索/行业/市场/分页）"""
+    return await run_in_threadpool(
+        _stock_repo.get_stock_list, search, industry, market, page, page_size
+    )
+
+
+@app.get("/api/stocks/industries")
+async def get_stock_industries():
+    """行业列表（用于筛选下拉）"""
+    industries = await run_in_threadpool(_stock_repo.get_industries)
+    return {"data": industries}
+
+
+@app.get("/api/stocks/{ts_code}/profile")
+async def get_stock_profile(ts_code: str):
+    """个股档案 + 估值指标"""
+    profile = await run_in_threadpool(_stock_repo.get_stock_profile, ts_code)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Stock {ts_code} not found")
+    return profile
+
+
+@app.get("/api/stocks/{ts_code}/daily")
+async def get_stock_daily(
+    ts_code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = Query(250, ge=1, le=1000),
+):
+    """个股日线行情"""
+    data = await run_in_threadpool(
+        _stock_repo.get_stock_daily, ts_code, start_date, end_date, limit
+    )
+    return {"data": data}
+
+
+@app.get("/api/market/overview")
+async def get_market_overview(trade_date: Optional[str] = None):
+    """大盘指数概览"""
+    data = await run_in_threadpool(_stock_repo.get_market_overview, trade_date)
+    return {"data": data}
+
+
+@app.get("/api/money-flow")
+async def get_money_flow(
+    trade_date: Optional[str] = None,
+    flow_type: Optional[str] = None,
+    ts_code: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """资金流向"""
+    data = await run_in_threadpool(
+        _stock_repo.get_money_flow, trade_date, flow_type, ts_code, limit
+    )
+    return {"data": data}
+
+
+@app.get("/api/dragon-tiger")
+async def get_dragon_tiger(
+    trade_date: Optional[str] = None,
+    ts_code: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """龙虎榜"""
+    data = await run_in_threadpool(
+        _stock_repo.get_dragon_tiger, trade_date, ts_code, limit
+    )
+    return {"data": data}
+
+
+@app.get("/api/sectors")
+async def get_sectors(
+    block_type: Optional[str] = None,
+    trade_date: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """板块行情"""
+    data = await run_in_threadpool(
+        _stock_repo.get_sectors, block_type, trade_date, limit
+    )
+    return {"data": data}

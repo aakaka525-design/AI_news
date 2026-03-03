@@ -2,15 +2,23 @@ import { API_BASE_URL } from "./api-config";
 import type {
   AnomaliesResponse,
   AnomalyStats,
+  DragonTigerResponse,
   FreshnessResponse,
   HealthResponse,
   HotspotsResponse,
+  IndustryListResponse,
+  MarketOverviewResponse,
+  MoneyFlowResponse,
   NewsListResponse,
   RatingStats,
   ResearchReportsResponse,
   RssResponse,
   SchedulerJobsResponse,
+  SectorResponse,
   SentimentStats,
+  StockDailyResponse,
+  StockListResponse,
+  StockProfileResponse,
   TradingDayResponse,
 } from "./types";
 
@@ -186,3 +194,70 @@ export const fetchTradingDay = (date?: string) =>
 // Freshness
 export const fetchFreshness = () =>
   fetchApi<FreshnessResponse>("/api/integrity/freshness");
+
+// ===== Stocks =====
+
+export const fetchStocks = (
+  page = 1,
+  pageSize = 20,
+  search?: string,
+  industry?: string,
+  market?: string,
+) =>
+  fetchApi<StockListResponse>("/api/stocks", {
+    page: String(page),
+    page_size: String(pageSize),
+    ...(search ? { search } : {}),
+    ...(industry ? { industry } : {}),
+    ...(market ? { market } : {}),
+  });
+
+export const fetchStockIndustries = () =>
+  fetchApi<IndustryListResponse>("/api/stocks/industries");
+
+export const fetchStockProfile = (tsCode: string) =>
+  fetchApi<StockProfileResponse>(`/api/stocks/${tsCode}/profile`);
+
+export const fetchStockDaily = (
+  tsCode: string,
+  startDate?: string,
+  endDate?: string,
+  limit = 250,
+) =>
+  fetchApi<StockDailyResponse>(`/api/stocks/${tsCode}/daily`, {
+    limit: String(limit),
+    ...(startDate ? { start_date: startDate } : {}),
+    ...(endDate ? { end_date: endDate } : {}),
+  });
+
+export const fetchMarketOverview = (tradeDate?: string) =>
+  fetchApi<MarketOverviewResponse>("/api/market/overview", {
+    ...(tradeDate ? { trade_date: tradeDate } : {}),
+  });
+
+export const fetchMoneyFlow = (
+  tradeDate?: string,
+  flowType?: string,
+  tsCode?: string,
+  limit = 50,
+) =>
+  fetchApi<MoneyFlowResponse>("/api/money-flow", {
+    limit: String(limit),
+    ...(tradeDate ? { trade_date: tradeDate } : {}),
+    ...(flowType ? { flow_type: flowType } : {}),
+    ...(tsCode ? { ts_code: tsCode } : {}),
+  });
+
+export const fetchDragonTiger = (tradeDate?: string, tsCode?: string, limit = 50) =>
+  fetchApi<DragonTigerResponse>("/api/dragon-tiger", {
+    limit: String(limit),
+    ...(tradeDate ? { trade_date: tradeDate } : {}),
+    ...(tsCode ? { ts_code: tsCode } : {}),
+  });
+
+export const fetchSectors = (blockType?: string, tradeDate?: string, limit = 50) =>
+  fetchApi<SectorResponse>("/api/sectors", {
+    limit: String(limit),
+    ...(blockType ? { block_type: blockType } : {}),
+    ...(tradeDate ? { trade_date: tradeDate } : {}),
+  });
