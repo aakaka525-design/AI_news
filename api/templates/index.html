@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #16213e;
+            --text-primary: #e4e4e7;
+            --text-secondary: #a1a1aa;
+            --accent: #00d9ff;
+            --accent-glow: rgba(0, 217, 255, 0.3);
+            --border: #2d2d44;
+            --success: #22c55e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 40px var(--accent-glow);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--accent), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header .stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .stat-item .value {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* News List */
+        .news-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .news-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .news-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        .news-card .title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .news-card .meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .news-card .content {
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .news-card .content h1,
+        .news-card .content h2,
+        .news-card .content h3 {
+            color: var(--accent);
+            margin: 1rem 0 0.5rem;
+        }
+
+        .news-card .content h1 { font-size: 1.3rem; }
+        .news-card .content h2 { font-size: 1.15rem; }
+        .news-card .content h3 { font-size: 1.05rem; }
+
+        .news-card .content p {
+            margin-bottom: 0.75rem;
+        }
+
+        .news-card .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .news-card .content a:hover {
+            text-decoration: underline;
+        }
+
+        .news-card .content ul,
+        .news-card .content ol {
+            padding-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .news-card .content li {
+            margin-bottom: 0.25rem;
+        }
+
+        .news-card .content strong {
+            color: var(--accent);
+        }
+
+        .news-card .content code {
+            background: var(--bg-secondary);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px dashed var(--border);
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h2 {
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .header h1 {
+                font-size: 1.75rem;
+            }
+
+            .header .stats {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .news-card {
+                padding: 1rem;
+            }
+
+            .news-card .title {
+                font-size: 1.1rem;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🔥 AI News Dashboard</h1>
+            <p style="color: var(--text-secondary);">基于 TrendRadar 的舆情监控系统</p>
+            <div class="stats">
+                <div class="stat-item">
+                    <span>📊 总计</span>
+                    <span class="value">{{ total_count }}</span>
+                    <span>条热点</span>
+                </div>
+                <div class="stat-item">
+                    <span>🕐 更新于</span>
+                    <span class="value">{{ updated_at }}</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="news-list">
+            {% if news_list %}
+                {% for news in news_list %}
+                <article class="news-card">
+                    <h2 class="title">
+                        <span>📰</span>
+                        {{ news.title }}
+                    </h2>
+                    <div class="meta">
+                        <span>🆔 #{{ news.id }}</span> · 
+                        <span>📅 {{ news.received_at }}</span>
+                    </div>
+                    <div class="content">
+                        {{ news.content_html | safe }}
+                    </div>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <div class="icon">📭</div>
+                    <h2>暂无热点数据</h2>
+                    <p>等待 TrendRadar 推送新闻...</p>
+                    <p style="margin-top: 1rem; color: var(--accent);">
+                        提示: 可手动触发 <code>docker exec trendradar python manage.py run</code>
+                    </p>
+                </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <script>
+        // 自动刷新 (每5分钟)
+        setTimeout(() => location.reload(), 5 * 60 * 1000);
+    </script>
+</body>
+</html>

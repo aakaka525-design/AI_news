@@ -1,0 +1,30 @@
+# Environment
+.env
+.env.local
+
+# Data
+data/
+trendradar/output/
+nocodb_data/
+nocodb_pg_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy
+legacy_archive/

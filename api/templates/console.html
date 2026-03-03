@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News - 测试控制台</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --card: #1a1a1a;
+            --border: #2a2a2a;
+            --text: #e0e0e0;
+            --accent: #4ade80;
+            --accent2: #60a5fa;
+            --warn: #fbbf24;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            color: var(--accent2);
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .btn {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn.secondary {
+            background: var(--accent2);
+        }
+
+        .btn.warn {
+            background: var(--warn);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        input,
+        select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px;
+            border-radius: 6px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .output {
+            background: #000;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+            margin-top: 15px;
+        }
+
+        .output .success {
+            color: var(--accent);
+        }
+
+        .output .error {
+            color: #f87171;
+        }
+
+        .output .info {
+            color: var(--accent2);
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .status.ok {
+            background: #166534;
+            color: #4ade80;
+        }
+
+        .status.err {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        .status.loading {
+            background: #1e3a5f;
+            color: #93c5fd;
+        }
+
+        .opportunity {
+            background: var(--bg);
+            border-left: 3px solid var(--accent);
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .opportunity .score {
+            background: var(--accent);
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .opportunity h4 {
+            margin: 8px 0 4px;
+        }
+
+        .opportunity .meta {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .rss-item {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rss-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .rss-item a {
+            color: var(--accent2);
+            text-decoration: none;
+        }
+
+        .rss-item .source {
+            background: var(--border);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔥 AI News 测试控制台</h1>
+
+        <div class="grid">
+            <!-- AI 分析 -->
+            <div class="card">
+                <h2>🤖 AI 热点分析</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="date" id="analyzeDate" value="2026-01-16">
+                    <input type="number" id="analyzeLimit" value="10" min="1" max="20" style="width: 80px;">
+                </div>
+                <button class="btn" onclick="runAnalysis()">开始分析</button>
+                <span id="analyzeStatus"></span>
+
+                <div id="analyzeResult" class="output" style="display:none;"></div>
+                <div id="opportunities"></div>
+            </div>
+
+            <!-- RSS 抓取 -->
+            <div class="card">
+                <h2>📡 RSS 订阅</h2>
+                <button class="btn secondary" onclick="fetchRSS()">抓取 RSS</button>
+                <button class="btn" onclick="loadRSS()">查看列表</button>
+                <span id="rssStatus"></span>
+
+                <div id="rssResult" class="output" style="display:none;"></div>
+                <div id="rssList"></div>
+            </div>
+
+            <!-- 系统状态 -->
+            <div class="card">
+                <h2>⚙️ 系统状态</h2>
+                <button class="btn" onclick="checkHealth()">健康检查</button>
+                <button class="btn secondary" onclick="loadNews()">查看新闻</button>
+                <div id="healthResult" class="output"></div>
+            </div>
+
+            <!-- API 测试 -->
+            <div class="card">
+                <h2>🧪 API 测试</h2>
+                <select id="apiEndpoint">
+                    <option value="GET /health">GET /health</option>
+                    <option value="GET /api/news?limit=5">GET /api/news?limit=5</option>
+                    <option value="GET /api/hotspots">GET /api/hotspots</option>
+                    <option value="GET /api/rss?limit=10">GET /api/rss?limit=10</option>
+                </select>
+                <button class="btn warn" onclick="testAPI()">发送请求</button>
+                <div id="apiResult" class="output"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        function setStatus(id, type, text) {
+            const el = document.getElementById(id);
+            el.className = 'status ' + type;
+            el.textContent = text;
+        }
+
+        async function runAnalysis() {
+            const date = document.getElementById('analyzeDate').value;
+            const limit = document.getElementById('analyzeLimit').value;
+
+            setStatus('analyzeStatus', 'loading', '分析中...');
+            document.getElementById('opportunities').innerHTML = '';
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date, limit: parseInt(limit) })
+                });
+                const data = await resp.json();
+
+                if (data.error) {
+                    setStatus('analyzeStatus', 'err', '失败');
+                    document.getElementById('analyzeResult').style.display = 'block';
+                    document.getElementById('analyzeResult').innerHTML = '<span class="error">' + JSON.stringify(data, null, 2) + '</span>';
+                    return;
+                }
+
+                setStatus('analyzeStatus', 'ok', '完成');
+
+                // 渲染机会点
+                let html = `<div style="margin:15px 0;color:#888;">📝 ${data.analysis_summary || ''}</div>`;
+                (data.opportunities || []).forEach(opp => {
+                    html += `
+                        <div class="opportunity">
+                            <span class="score">${opp.score}分</span>
+                            <span style="color:#888;font-size:12px;margin-left:8px;">${opp.type || ''}</span>
+                            <h4>${opp.title || ''}</h4>
+                            <div class="meta">
+                                👥 ${opp.target_audience || '-'} | 
+                                ⏰ ${opp.timeliness?.level || '-'} | 
+                                📱 ${opp.action_plan?.platform || '-'}
+                            </div>
+                        </div>
+                    `;
+                });
+                document.getElementById('opportunities').innerHTML = html;
+
+            } catch (e) {
+                setStatus('analyzeStatus', 'err', '请求失败');
+                document.getElementById('analyzeResult').style.display = 'block';
+                document.getElementById('analyzeResult').innerHTML = '<span class="error">' + e.message + '</span>';
+            }
+        }
+
+        async function fetchRSS() {
+            setStatus('rssStatus', 'loading', '抓取中...');
+            try {
+                const resp = await fetch(`${API_BASE}/api/rss/fetch`, { method: 'POST' });
+                const data = await resp.json();
+
+                if (data.error) {
+                    setStatus('rssStatus', 'err', '失败');
+                    document.getElementById('rssResult').style.display = 'block';
+                    document.getElementById('rssResult').innerHTML = '<span class="error">' + data.error + '</span>';
+                } else {
+                    setStatus('rssStatus', 'ok', `${data.fetched} 条`);
+                    loadRSS();
+                }
+            } catch (e) {
+                setStatus('rssStatus', 'err', '请求失败');
+            }
+        }
+
+        async function loadRSS() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/rss?limit=20`);
+                const data = await resp.json();
+
+                let html = '';
+                (data.data || []).forEach(item => {
+                    html += `
+                        <div class="rss-item">
+                            <a href="${item.link}" target="_blank">${item.title}</a>
+                            <span class="source">${item.source}</span>
+                        </div>
+                    `;
+                });
+                document.getElementById('rssList').innerHTML = html || '<div style="color:#666;padding:20px;">暂无数据</div>';
+            } catch (e) {
+                document.getElementById('rssList').innerHTML = '<span class="error">加载失败</span>';
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const resp = await fetch(`${API_BASE}/health`);
+                const data = await resp.json();
+                document.getElementById('healthResult').innerHTML = '<span class="success">' + JSON.stringify(data, null, 2) + '</span>';
+            } catch (e) {
+                document.getElementById('healthResult').innerHTML = '<span class="error">连接失败: ' + e.message + '</span>';
+            }
+        }
+
+        async function loadNews() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/news?limit=5`);
+                const data = await resp.json();
+                document.getElementById('healthResult').innerHTML = '<span class="info">' + JSON.stringify(data, null, 2) + '</span>';
+            } catch (e) {
+                document.getElementById('healthResult').innerHTML = '<span class="error">' + e.message + '</span>';
+            }
+        }
+
+        async function testAPI() {
+            const endpoint = document.getElementById('apiEndpoint').value;
+            const [method, path] = endpoint.split(' ');
+
+            try {
+                const resp = await fetch(`${API_BASE}${path}`, { method });
+                const data = await resp.json();
+                document.getElementById('apiResult').innerHTML = '<span class="info">' + JSON.stringify(data, null, 2) + '</span>';
+            } catch (e) {
+                document.getElementById('apiResult').innerHTML = '<span class="error">' + e.message + '</span>';
+            }
+        }
+
+        // 页面加载时检查健康状态
+        checkHealth();
+    </script>
+</body>
+
+</html>
