@@ -46,6 +46,9 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-deepseek}
       - AI_MODEL=${AI_MODEL:-deepseek-chat}
       - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
+      - API_KEY_REQUIRED=${API_KEY_REQUIRED:-false}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,6 +83,7 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_DASHBOARD_API_KEY=${NEXT_PUBLIC_DASHBOARD_API_KEY:-}
     depends_on:
       - dashboard
 

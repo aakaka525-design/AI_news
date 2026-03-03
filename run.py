@@ -35,9 +35,32 @@ def run_fetch():
 
 def run_analyze():
     """运行分析"""
-    print("📊 analyze 子命令尚未实现统一入口。")
-    print("可直接运行: python -m src.analysis.sentiment --stats")
-    raise SystemExit(1)
+    import asyncio
+    from src.ai_engine.sentiment import analyze_pending_news, get_sentiment_stats
+
+    print("📊 运行 AI 分析（RSS 情感）...")
+
+    try:
+        before = get_sentiment_stats()
+        result = asyncio.run(analyze_pending_news(limit=20))
+        after = get_sentiment_stats()
+    except Exception as exc:  # noqa: BLE001
+        print(f"❌ analyze 执行失败: {exc}")
+        raise SystemExit(1) from exc
+
+    print(
+        "   分析结果: "
+        f"analyzed={result.get('analyzed', 0)}, pending={result.get('pending', 0)}"
+    )
+    if result.get("error"):
+        print(f"   ⚠️ {result['error']}")
+    print(
+        "   统计变化: "
+        f"analyzed {before.get('analyzed_count', 0)} -> {after.get('analyzed_count', 0)}, "
+        f"pending {before.get('pending_count', 0)} -> {after.get('pending_count', 0)}"
+    )
+
+    return {"before": before, "result": result, "after": after}
 
 
 def run_migrate():

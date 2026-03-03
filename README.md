@@ -164,7 +164,7 @@ AI_news/
 python run.py api          # 启动 FastAPI 服务 (端口 8000)
 python run.py fetch        # 运行数据抓取
 python run.py migrate      # 运行数据库迁移
-python run.py analyze      # 运行 AI 分析
+python run.py analyze      # 运行 RSS 新闻 AI 情感分析
 python run.py --help       # 帮助
 ```
 
@@ -182,12 +182,22 @@ TUSHARE_TOKEN=your_tinyshare_token
 DATABASE_URL=sqlite:///data/stocks.db
 NEWS_DATABASE_URL=sqlite:///data/news.db
 
+# API 鉴权（生产建议开启）
+DASHBOARD_API_KEY=
+API_KEY_REQUIRED=false
+WEBHOOK_SECRET=
+
 # AI 分析 (可选)
 AI_ANALYSIS_ENABLED=true
 AI_API_KEY=your_api_key
 AI_PROVIDER=ppinfra
 AI_MODEL=zai-org/glm-4.7
 AI_BASE_URL=https://api.ppinfra.com/openai/v1
+
+# 前端（可选）
+NEXT_PUBLIC_API_URL=http://localhost:8000
+# 仅当 API_KEY_REQUIRED=true 且浏览器直连后端时设置
+NEXT_PUBLIC_DASHBOARD_API_KEY=
 
 # Telegram 推送 (可选)
 TELEGRAM_BOT_TOKEN=

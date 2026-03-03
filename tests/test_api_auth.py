@@ -42,6 +42,7 @@ async def test_verify_api_key_accepts_valid_value(monkeypatch):
 def test_mutating_endpoints_are_protected():
     protected_routes = [
         ("/api/clean", "POST"),
+        ("/api/analyze", "POST"),
         ("/api/rss/fetch", "POST"),
         ("/api/rss/analyze", "POST"),
         ("/api/research/fetch", "POST"),

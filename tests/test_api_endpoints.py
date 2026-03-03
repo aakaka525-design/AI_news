@@ -381,3 +381,121 @@ async def test_anomalies_limit_out_of_range_returns_422(client):
 async def test_anomalies_days_out_of_range_returns_422(client):
     resp = await client.get("/api/anomalies?days=0")
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_console_page_returns_html(client):
+    resp = await client.get("/console")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint_success(client, monkeypatch):
+    class _DummyAnalyzer:
+        async def analyze_opportunities(self, _items):
+            return {
+                "analysis_summary": "ok",
+                "opportunities": [{"stock_code": "000001"}],
+            }
+
+    monkeypatch.setattr(api_main, "create_analyzer_from_env", lambda: _DummyAnalyzer())
+    monkeypatch.setattr(
+        api_main,
+        "get_news_by_date",
+        lambda _date, _limit: [{"id": 1, "title": "t", "content": "c"}],
+    )
+    monkeypatch.setattr(api_main, "save_analysis_result", lambda *_args: 99)
+
+    resp = await client.post("/api/analyze", json={"date": "2026-03-01", "limit": 5})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["analysis_id"] == 99
+    assert body["input_count"] == 1
+    assert body["date"] == "2026-03-01"
+
+
+@pytest.mark.asyncio
+async def test_get_analysis_endpoint_returns_row(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._repo,
+        "get_analysis_by_id",
+        lambda analysis_id: {"id": analysis_id, "analysis_summary": "ok"},
+    )
+    resp = await client.get("/api/analysis/7")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_rss_sentiment_stats_endpoint_success(client, monkeypatch):
+    import src.ai_engine.sentiment as sentiment_module
+
+    monkeypatch.setattr(
+        sentiment_module,
+        "get_sentiment_stats",
+        lambda: {
+            "analyzed_count": 3,
+            "pending_count": 1,
+            "distribution": {"positive": 2, "neutral": 1},
+        },
+    )
+    resp = await client.get("/api/rss/sentiment_stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["analyzed_count"] == 3
+    assert body["pending_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_anomalies_stats_endpoint_success(client, monkeypatch):
+    import src.analysis.anomaly as anomaly_module
+
+    monkeypatch.setattr(anomaly_module, "get_anomaly_stats", lambda: {"breakout": 4})
+    resp = await client.get("/api/anomalies/stats")
+    assert resp.status_code == 200
+    assert resp.json()["breakout"] == 4
+
+
+@pytest.mark.asyncio
+async def test_integrity_check_endpoint_success(client, monkeypatch):
+    import fetchers.integrity_checker as integrity_module
+
+    monkeypatch.setattr(
+        integrity_module,
+        "generate_integrity_report",
+        lambda: {"ok": True, "tables": []},
+    )
+    resp = await client.get("/api/integrity/check")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_freshness_endpoint_success(client, monkeypatch):
+    import fetchers.integrity_checker as integrity_module
+
+    monkeypatch.setattr(
+        integrity_module,
+        "check_table_freshness",
+        lambda: [{"table": "ts_daily", "latest_date": "2026-03-01"}],
+    )
+    resp = await client.get("/api/integrity/freshness")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tables"][0]["table"] == "ts_daily"
+
+
+@pytest.mark.asyncio
+async def test_trading_day_endpoint_success(client, monkeypatch):
+    import fetchers.trading_calendar as calendar_module
+
+    monkeypatch.setattr(calendar_module, "is_trading_day", lambda _date: True)
+    monkeypatch.setattr(calendar_module, "get_latest_trading_day", lambda: "2026-03-02")
+
+    resp = await client.get("/api/calendar/is_trading_day?date=2026-03-03")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["date"] == "2026-03-03"
+    assert body["is_trading_day"] is True
+    assert body["latest_trading_day"] == "2026-03-02"
