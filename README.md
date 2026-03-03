@@ -1,13 +1,14 @@
-# AI_news - A股全维度数据系统
+# AI_news - A股智能数据平台
 
-> **AI-Ready** 金融数据平台：Tushare 数据源 + 量化策略 + LLM 分析
+> 金融数据采集 + 量化策略 + LLM 分析 + 可视化前端
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ```bash
 # 1. 克隆项目
@@ -27,70 +28,113 @@ python run.py migrate
 # 5. 抓取数据
 python run.py fetch
 
-# 6. 启动服务
+# 6. 启动后端
 python run.py api
+
+# 7. 启动前端 (可选)
+cd frontend && npm install && npm run dev
 ```
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
 AI_news/
-├── run.py                  # 统一入口
-├── pyproject.toml          # 项目配置
-├── .env                    # 环境变量 (gitignore)
+├── run.py                      # 统一 CLI 入口
+├── pyproject.toml              # 项目配置
+├── requirements.txt            # Python 依赖
+├── docker-compose.yml          # Docker 编排
+├── rss_fetcher.py              # RSS 订阅抓取
 │
-├── src/                    # 核心源代码
-│   ├── database/           # 数据库层
-│   │   ├── connection.py   # 连接管理
-│   │   ├── models.py       # SQLAlchemy 模型 (AI-Ready)
-│   │   └── migrations/     # 迁移脚本
+├── src/                        # 核心源代码
+│   ├── database/               # 数据库层
+│   │   ├── connection.py       #   连接管理
+│   │   ├── engine.py           #   引擎配置
+│   │   ├── models.py           #   SQLAlchemy 模型
+│   │   ├── upsert.py           #   幂等写入
+│   │   ├── migrations/         #   迁移脚本
+│   │   └── repositories/       #   数据仓库 (news, report)
 │   │
-│   ├── data_ingestion/     # 数据采集层
-│   │   ├── tushare/        # Tushare 数据源
-│   │   │   ├── client.py   # API 客户端 (限流+重试)
-│   │   │   ├── daily.py    # 日线抓取
-│   │   │   ├── financials.py
-│   │   │   ├── moneyflow.py
-│   │   │   └── dragon_tiger.py
-│   │   ├── akshare/        # AkShare 数据源 (遗留)
-│   │   └── compat.py       # 兼容层
+│   ├── data_ingestion/         # 数据采集层
+│   │   ├── tushare/            #   Tinyshare 数据源
+│   │   │   ├── client.py       #     API 客户端 (限流+重试)
+│   │   │   ├── daily.py        #     日线行情
+│   │   │   ├── financials.py   #     财务数据
+│   │   │   ├── moneyflow.py    #     资金流向
+│   │   │   ├── dragon_tiger.py #     龙虎榜
+│   │   │   └── valuation.py    #     估值指标
+│   │   ├── akshare/            #   AkShare 数据源 (板块/融资融券/北向)
+│   │   └── compat.py           #   新旧表兼容层
 │   │
-│   ├── analysis/           # 分析层
-│   │   ├── indicators.py   # 技术指标
-│   │   ├── anomaly.py      # 异常检测
-│   │   ├── sentiment.py    # 情绪分析
-│   │   └── trend.py        # 趋势预测
+│   ├── analysis/               # 分析层
+│   │   ├── indicators.py       #   技术指标
+│   │   ├── anomaly.py          #   异常检测
+│   │   ├── sentiment.py        #   情绪分析
+│   │   ├── trend.py            #   趋势预测
+│   │   ├── cleaner.py          #   数据清洗
+│   │   ├── backtest_engine.py  #   回测引擎
+│   │   ├── backtest_metrics.py #   回测指标
+│   │   ├── sector_rotation.py  #   板块轮动
+│   │   └── strategies.py       #   策略模型
 │   │
-│   ├── strategies/         # 策略层
-│   │   ├── limit_up_scanner.py  # 涨停扫描
-│   │   ├── rps_screener.py      # RPS 筛选
-│   │   └── full_analysis.py     # 综合分析
+│   ├── strategies/             # 策略层
+│   │   ├── limit_up_scanner.py #   涨停扫描
+│   │   ├── rps_screener.py     #   RPS 筛选
+│   │   └── full_analysis.py    #   综合分析
 │   │
-│   ├── ai_engine/          # AI 引擎
-│   │   ├── llm_analyzer.py # LLM 分析器
-│   │   └── report_parser.py# 研报解析
+│   ├── ai_engine/              # AI 引擎
+│   │   ├── llm_analyzer.py     #   LLM 分析器
+│   │   ├── report_parser.py    #   研报解析
+│   │   └── sentiment.py        #   AI 情绪分析
 │   │
-│   └── utils/              # 工具层
-│       ├── rate_limiter.py # 令牌桶限流
-│       └── retry.py        # 重试装饰器
+│   └── utils/                  # 工具层
+│       ├── rate_limiter.py     #   令牌桶限流
+│       └── retry.py            #   重试装饰器
 │
-├── api/                    # FastAPI 服务
-│   ├── main.py             # API 入口
-│   ├── routers/            # 路由
-│   ├── schemas/            # 请求/响应模型
-│   └── templates/          # 前端模板
+├── api/                        # FastAPI 后端
+│   ├── main.py                 #   API 入口 (CORS)
+│   ├── middleware.py           #   中间件
+│   ├── scheduler.py            #   定时任务调度
+│   ├── routers/                #   路由
+│   ├── schemas/                #   请求/响应模型
+│   └── templates/              #   管理面板模板
 │
-├── scripts/                # 执行脚本
-├── tests/                  # 测试
-├── data/                   # SQLite 数据 (gitignore)
-└── config/                 # 配置文件
+├── frontend/                   # Next.js 14 前端
+│   ├── app/                    #   App Router 页面
+│   │   ├── page.tsx            #     仪表盘 (健康/情绪/热点/异常/研报)
+│   │   ├── news/               #     新闻中心 (推送/RSS)
+│   │   ├── strategy/anomaly/   #     异常信号
+│   │   └── settings/           #     系统设置
+│   ├── components/             #   React 组件 (shadcn/ui)
+│   ├── lib/                    #   API 客户端 / hooks / 类型定义
+│   └── Dockerfile              #   多阶段构建
+│
+├── fetchers/                   # 数据抓取模块
+│   ├── main_money_flow.py      #   主力资金
+│   ├── integrity_checker.py    #   数据完整性检查
+│   ├── trading_calendar.py     #   交易日历
+│   ├── valuation.py            #   估值数据
+│   └── ...                     #   龙虎榜/财务/融资融券/北向
+│
+├── scripts/                    # 批量脚本 (14 个)
+│   ├── fetch_history.py        #   历史数据回填
+│   ├── fetch_all_stocks.py     #   全量股票抓取
+│   ├── full_stock_analysis.py  #   综合分析
+│   ├── rps_screener.py         #   RPS 筛选
+│   ├── migrate_sqlite_to_pg.py #   SQLite → PostgreSQL 迁移
+│   └── ...
+│
+├── tests/                      # 测试 (340+ passing)
+├── config/                     # 配置 (settings.py)
+├── data/                       # 数据存储 (gitignore)
+├── alembic/                    # 数据库迁移
+└── docs/plans/                 # 实施计划文档
 ```
 
 ---
 
-## 🗄️ 数据库架构 (AI-Ready)
+## 数据库架构
 
 ### 核心表
 
@@ -107,97 +151,56 @@ AI_news/
 
 ### 设计亮点
 
-1. **预计算复权价** - `qfq_close`/`hfq_close` 避免运行时计算
-2. **向量字段** - `embedding` 支持 LLM 语义检索
-3. **情绪分析** - `sentiment_score` 直接落库
-4. **幂等性** - `upsert_data()` 防止重复插入
+1. **预计算复权价** — `qfq_close`/`hfq_close` 避免运行时计算
+2. **向量字段** — `embedding` 支持 LLM 语义检索
+3. **情绪评分** — `sentiment_score` 直接落库
+4. **幂等写入** — `upsert_data()` 防止重复插入
 
 ---
 
-## 🔧 命令行接口
+## 命令行接口
 
 ```bash
-# 启动 FastAPI 服务
-python run.py api
-
-# 运行数据抓取
-python run.py fetch
-
-# 运行数据库迁移
-python run.py migrate
-
-# 运行分析
-python run.py analyze
-
-# 帮助
-python run.py --help
+python run.py api          # 启动 FastAPI 服务 (端口 8000)
+python run.py fetch        # 运行数据抓取
+python run.py migrate      # 运行数据库迁移
+python run.py analyze      # 运行 AI 分析
+python run.py --help       # 帮助
 ```
 
 ---
 
-## 📊 使用示例
+## 环境变量
 
-### 获取 Tushare 数据
-
-```python
-from src.data_ingestion.tushare import get_tushare_client
-
-client = get_tushare_client()
-
-# 获取日线数据
-df = client.daily(ts_code='600519.SH', start_date='20260101')
-
-# 获取财务指标
-df = client.fina_indicator(ts_code='600519.SH')
-```
-
-### 兼容层查询
-
-```python
-from src.data_ingestion import (
-    to_ts_code, from_ts_code,
-    query_daily, query_stock_info
-)
-
-# 代码转换
-ts_code = to_ts_code('600519')  # -> 600519.SH
-
-# 统一查询 (自动选择新旧表)
-data = query_daily('600519', limit=10)
-info = query_stock_info('000001')
-```
-
-### 策略筛选
-
-```python
-from src.strategies.rps_screener import screen_by_rps
-
-# RPS 强势股筛选
-stocks = screen_by_rps(min_rps=90, min_market_cap=50)
-```
-
----
-
-## 🔐 环境变量
-
-创建 `.env` 文件：
+创建 `.env` 文件 (参考 `.env.example`)：
 
 ```env
-# Tushare
-TUSHARE_TOKEN=your_token_here
-TUSHARE_API_URL=https://jiaoch.site
+# 数据源
+TUSHARE_TOKEN=your_tinyshare_token
 
-# Database
+# 数据库 (默认 SQLite)
 DATABASE_URL=sqlite:///data/stocks.db
+NEWS_DATABASE_URL=sqlite:///data/news.db
 
-# API
-API_HOST=0.0.0.0
-API_PORT=8000
+# AI 分析 (可选)
+AI_ANALYSIS_ENABLED=true
+AI_API_KEY=your_api_key
+AI_PROVIDER=ppinfra
+AI_MODEL=zai-org/glm-4.7
+AI_BASE_URL=https://api.ppinfra.com/openai/v1
+
+# Telegram 推送 (可选)
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# TrendRadar 爬虫 (Docker 模式)
+ENABLE_CRAWLER=true
+CRON_SCHEDULE=*/30 * * * *
 ```
 
 ---
 
-## 🐳 Docker 部署
+## Docker 部署
 
 ```bash
 # 启动所有服务
@@ -210,9 +213,20 @@ docker-compose logs -f dashboard
 docker-compose down
 ```
 
+### 服务列表
+
+| 服务 | 端口 | 说明 |
+|:---|:---|:---|
+| dashboard | 8000 | FastAPI 后端 |
+| frontend | 3000 | Next.js 前端 |
+| rsshub | 1200 | RSS 聚合器 |
+| trendradar | — | AI 新闻爬虫 |
+| postgres | 5432 | PostgreSQL 数据库 |
+| nocodb | 8180 | 数据库可视化 |
+
 ---
 
-## 📈 数据更新频率
+## 数据更新频率
 
 | 数据类型 | 更新时间 | 说明 |
 |:---|:---|:---|
@@ -220,18 +234,18 @@ docker-compose down
 | 财务数据 | 季度 | 财报发布后 |
 | 龙虎榜 | 每日 18:00 | 交易所公布后 |
 | 资金流向 | 每日 16:00 | 盘后统计 |
-| 新闻快讯 | 实时 | RSS 订阅 |
+| 新闻快讯 | 实时 | RSS 订阅 + Webhook |
 
 ---
 
-## 🧪 测试
+## 测试
 
 ```bash
 # 运行所有测试
 pytest
 
 # 运行特定测试
-pytest tests/test_tushare.py -v
+pytest tests/test_core.py -v
 
 # 覆盖率报告
 pytest --cov=src --cov-report=html
@@ -239,22 +253,28 @@ pytest --cov=src --cov-report=html
 
 ---
 
-## 📝 更新日志
+## 更新日志
+
+### v3.0.0 (2026-03-03)
+- 新增 Next.js 14 前端 (shadcn/ui + ECharts 可视化)
+- 迁移数据源至 Tinyshare
+- 新增回测引擎 + 板块轮动策略
+- 新增研报解析模块
+- 清理 legacy_archive、23 个过时脚本、345MB 损坏数据
 
 ### v2.0.0 (2026-01-22)
-- 🏗️ 项目架构重构为 Clean Architecture
-- 🔥 全面迁移至 Tushare 数据源
-- 🤖 新增 AI-Ready 数据库模型 (向量字段)
-- 📦 新增统一入口 `run.py`
-- 🧹 清理遗留代码至 `legacy_archive/`
+- 项目架构重构为 Clean Architecture
+- 迁移至 Tushare 数据源
+- 新增 AI-Ready 数据库模型 (向量字段)
+- 新增统一入口 `run.py`
 
 ### v1.0.0 (2026-01-18)
-- 🚀 初始版本
+- 初始版本
 - AkShare 数据源
 - FastAPI Dashboard
 
 ---
 
-## 📄 License
+## License
 
 MIT License - 详见 [LICENSE](LICENSE)
