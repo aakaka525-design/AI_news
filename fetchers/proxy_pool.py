@@ -5,9 +5,9 @@
 从 89ip.cn 获取免费代理，支持自动轮换和失效剔除
 """
 
-import re
 import time
 import random
+import os
 import requests
 from typing import Optional
 from datetime import datetime
@@ -16,22 +16,34 @@ from datetime import datetime
 class ProxyPool:
     """代理池管理器"""
 
-    # 青果网按量代理 API（每次获取100个）
-    PROXY_API = "https://share.proxy.qg.net/get?key=4IUZXC7F&num=100&format=json"
-
-    # 账密认证信息
-    AUTH_KEY = "4IUZXC7F"
-    AUTH_PWD = "D3E9D5EF62D7"
-
     # 代理有效期（秒）- 青果网短效代理2分钟
     PROXY_TTL = 100  # 设为100秒，留10秒余量
 
     def __init__(self, min_proxies: int = 5):
+        # 在实例化时读取环境变量，便于测试和动态配置
+        self.auth_key = os.getenv("PROXY_API_KEY", "").strip()
+        self.auth_pwd = os.getenv("PROXY_API_PWD", "").strip()
+        self.proxy_required = os.getenv("PROXY_REQUIRED", "").strip().lower() in {"1", "true", "yes"}
+        # 保持旧属性名兼容
+        self.AUTH_KEY = self.auth_key
+        self.AUTH_PWD = self.auth_pwd
+
         self.proxies: list[str] = []
         self.bad_proxies: set[str] = set()
         self.min_proxies = min_proxies
         self.last_fetch = 0
         self.current_index = 0
+
+        if self.proxy_required and not self._has_credentials():
+            raise RuntimeError("缺少代理凭据，请配置 PROXY_API_KEY / PROXY_API_PWD")
+
+    def _has_credentials(self) -> bool:
+        return bool(self.auth_key and self.auth_pwd)
+
+    def _build_proxy_api_params(self, num: int) -> Optional[dict]:
+        if not self._has_credentials():
+            return None
+        return {"key": self.auth_key, "num": num, "format": "json"}
 
     def is_expired(self) -> bool:
         """检查代理是否已过期"""
@@ -45,8 +57,16 @@ class ProxyPool:
 
     def fetch_proxies(self) -> list[str]:
         """从青果网 API 获取代理列表"""
+        if not self._has_credentials():
+            self.log("未配置代理凭据，跳过代理池拉取")
+            return []
+
         try:
-            resp = requests.get(self.PROXY_API, timeout=10)
+            params = self._build_proxy_api_params(100)
+            if params is None:
+                return []
+
+            resp = requests.get("https://share.proxy.qg.net/get", params=params, timeout=10)
             data = resp.json()
 
             if data.get("code") == "SUCCESS":
@@ -77,10 +97,17 @@ class ProxyPool:
 
     def get_fresh_proxy(self) -> Optional[str]:
         """实时获取一个新代理（不缓存）"""
+        if not self._has_credentials():
+            return self.get_proxy()
+
         try:
             # 每次获取10个，随机选一个
+            params = self._build_proxy_api_params(10)
+            if params is None:
+                return self.get_proxy()
             resp = requests.get(
-                "https://share.proxy.qg.net/get?key=4IUZXC7F&num=10&format=json",
+                "https://share.proxy.qg.net/get",
+                params=params,
                 timeout=5
             )
             data = resp.json()
@@ -94,13 +121,16 @@ class ProxyPool:
 
     def get_verified_proxy(self, max_attempts: int = 5) -> Optional[str]:
         """获取一个经过验证可用的代理"""
+        if not self._has_credentials():
+            return None
+
         for _ in range(max_attempts):
             proxy = self.get_fresh_proxy()
             if not proxy:
                 continue
 
             # 使用国内站点快速测试代理可用性
-            proxy_url = f"http://{self.AUTH_KEY}:{self.AUTH_PWD}@{proxy}"
+            proxy_url = f"http://{self.auth_key}:{self.auth_pwd}@{proxy}"
             try:
                 resp = requests.get(
                     "http://test.ipw.cn",  # 国内测试站点
@@ -122,8 +152,9 @@ class ProxyPool:
             return None
 
         # 轮换使用
+        proxy = self.proxies[self.current_index]
         self.current_index = (self.current_index + 1) % len(self.proxies)
-        return self.proxies[self.current_index]
+        return proxy
 
     def mark_bad(self, proxy: str):
         """标记代理为失效"""
@@ -134,10 +165,13 @@ class ProxyPool:
 
     def get_proxy_dict(self) -> Optional[dict]:
         """获取 requests 格式的代理字典（使用账密模式）"""
+        if not self._has_credentials():
+            return None
+
         proxy = self.get_proxy()
         if proxy:
             # 账密模式: http://user:password@proxy_ip:port
-            proxy_url = f"http://{self.AUTH_KEY}:{self.AUTH_PWD}@{proxy}"
+            proxy_url = f"http://{self.auth_key}:{self.auth_pwd}@{proxy}"
             return {
                 "http": proxy_url,
                 "https": proxy_url

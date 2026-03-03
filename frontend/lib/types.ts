@@ -48,10 +48,14 @@ export interface RssResponse {
 }
 
 export interface SentimentStats {
-  total: number;
-  positive: number;
-  negative: number;
-  neutral: number;
+  analyzed_count: number;
+  pending_count: number;
+  distribution: {
+    positive?: number;
+    neutral?: number;
+    negative?: number;
+    [key: string]: number | undefined;
+  };
 }
 
 // ===== Research Reports =====
@@ -101,7 +105,7 @@ export interface AnomalyStats {
 // ===== Health =====
 export interface HealthResponse {
   status: "healthy" | "degraded";
-  db: { url: string; ok: boolean; error?: string | null };
+  db: { url?: string; ok: boolean; error?: string | null };
   scheduler: { running: boolean; error?: string | null };
   version: string;
 }
@@ -135,6 +139,7 @@ export interface TableFreshness {
   table: string;
   latest_date?: string;
   row_count?: number;
+  record_count?: number;
 }
 
 export interface FreshnessResponse {

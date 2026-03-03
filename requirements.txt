@@ -31,6 +31,7 @@ apscheduler>=3.10.0
 
 # 文档渲染
 markdown>=3.6
+bleach>=6.1.0
 
 # RSS
 feedparser>=6.0.0

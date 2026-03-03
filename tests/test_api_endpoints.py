@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 
+from api import main as api_main
 from src.database.engine import create_engine_from_url, get_session_factory
 from src.database.repositories.news import NewsRepository
 
@@ -80,6 +81,7 @@ async def test_health_body_structure(client):
     assert data["status"] in ("healthy", "degraded")
     assert "db" in data
     assert data["db"]["ok"] is True
+    assert "url" not in data["db"]
     assert "scheduler" in data
     assert "version" in data
     assert data["version"] == "2.0.0"
@@ -119,6 +121,27 @@ async def test_webhook_receive_returns_hotspots_and_keywords(client):
     assert isinstance(body["keywords"], list)
 
 
+@pytest.mark.asyncio
+async def test_webhook_rejects_when_secret_enabled_and_header_missing(client, monkeypatch):
+    monkeypatch.setattr(api_main, "WEBHOOK_SECRET", "unit-secret")
+    resp = await client.post(
+        "/webhook/receive",
+        json={"title": "Secret", "content": "missing header"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_webhook_accepts_when_secret_header_matches(client, monkeypatch):
+    monkeypatch.setattr(api_main, "WEBHOOK_SECRET", "unit-secret")
+    resp = await client.post(
+        "/webhook/receive",
+        headers={"X-Webhook-Token": "unit-secret"},
+        json={"title": "Secret", "content": "header ok"},
+    )
+    assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # GET /api/news
 # ---------------------------------------------------------------------------
@@ -149,6 +172,20 @@ async def test_webhook_then_get_news(client):
     assert "id" in record
     assert record["title"] == "Breaking"
     assert "content_html" in record
+
+
+@pytest.mark.asyncio
+async def test_news_content_html_is_sanitized(client):
+    """Markdown 渲染结果应去除危险脚本与 javascript 协议。"""
+    await client.post(
+        "/webhook/receive",
+        json={"title": "XSS", "content": "hello<script>alert('x')</script> [x](javascript:alert(1))"},
+    )
+    resp = await client.get("/api/news?limit=1")
+    body = resp.json()
+    html = body["data"][0]["content_html"].lower()
+    assert "<script" not in html
+    assert "javascript:" not in html
 
 
 @pytest.mark.asyncio
@@ -284,3 +321,63 @@ async def test_multiple_webhooks_sequential(client):
         assert resp.json()["status"] == "ok"
     news_resp = await client.get("/api/news")
     assert news_resp.json()["total"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Research / anomalies endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_research_reports_endpoint_has_no_import_error(client):
+    resp = await client.get("/api/research/reports?limit=1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "error" not in body
+    assert "data" in body
+
+
+@pytest.mark.asyncio
+async def test_research_stats_endpoint_has_no_import_error(client):
+    resp = await client.get("/api/research/stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "error" not in body
+
+
+@pytest.mark.asyncio
+async def test_research_reports_endpoint_returns_500_when_fetcher_fails(client, monkeypatch):
+    import fetchers.research_report as report_fetcher
+
+    def _raise_runtime_error(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(report_fetcher, "get_latest_reports", _raise_runtime_error)
+    resp = await client.get("/api/research/reports?limit=1")
+    assert resp.status_code == 500
+    assert "failed" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_research_stats_endpoint_returns_500_when_fetcher_fails(client, monkeypatch):
+    import fetchers.research_report as report_fetcher
+
+    def _raise_runtime_error(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(report_fetcher, "get_rating_stats", _raise_runtime_error)
+    resp = await client.get("/api/research/stats")
+    assert resp.status_code == 500
+    assert "failed" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_anomalies_limit_out_of_range_returns_422(client):
+    resp = await client.get("/api/anomalies?limit=10000")
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_anomalies_days_out_of_range_returns_422(client):
+    resp = await client.get("/api/anomalies?days=0")
+    assert resp.status_code == 422

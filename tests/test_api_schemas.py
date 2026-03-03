@@ -1,5 +1,6 @@
 """API response schema tests."""
 
+import pytest
 from api.schemas import (
     ErrorResponse,
     HealthResponse,
@@ -7,12 +8,30 @@ from api.schemas import (
     NewsListResponse,
     WebhookResponse,
 )
+from pydantic import ValidationError
 
 
 def test_health_response_fields():
-    resp = HealthResponse(status="running", db="connected", scheduler="active", version="2.0.0")
-    assert resp.status == "running"
+    resp = HealthResponse(
+        status="healthy",
+        db={"ok": True, "error": None},
+        scheduler={"running": True, "error": None},
+        version="2.0.0",
+    )
+    assert resp.status == "healthy"
+    assert resp.db.ok is True
+    assert resp.scheduler.running is True
     assert resp.version == "2.0.0"
+
+
+def test_health_response_rejects_legacy_flat_shape():
+    with pytest.raises(ValidationError):
+        HealthResponse(
+            status="healthy",
+            db="connected",
+            scheduler="active",
+            version="2.0.0",
+        )
 
 
 def test_news_list_response():

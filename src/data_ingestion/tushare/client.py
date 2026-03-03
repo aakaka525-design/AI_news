@@ -125,7 +125,7 @@ class TushareAdapter:
             raise ImportError("请先安装 tinyshare: pip install tinyshare --upgrade")
         
         self.token = token or get_tushare_token()
-        self.api_url = api_url or os.getenv('TUSHARE_API_URL', 'http://106.54.191.157:5000')
+        self.api_url = api_url or os.getenv("TUSHARE_API_URL", "https://api.tushare.pro")
         
         ts.set_token(self.token)
         self.api = ts.pro_api(self.token)
@@ -145,7 +145,7 @@ class TushareAdapter:
         # Keep custom endpoint as configuration metadata only. Different tushare
         # versions expose different internals, so we avoid touching private attrs.
         custom_api_url = os.getenv("TUSHARE_API_URL")
-        if custom_api_url and custom_api_url != "http://106.54.191.157:5000":
+        if custom_api_url and custom_api_url != "https://api.tushare.pro":
             log("⚠️ 已检测到 TUSHARE_API_URL；当前适配器不再修改 tushare 私有字段，请通过官方配置方式设置网关。")
     
     def _log_request(self, api_name: str):

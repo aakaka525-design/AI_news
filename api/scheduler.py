@@ -307,7 +307,7 @@ def register_default_tasks():
     scheduler_manager.register_task("rss_fetch", rss_task)
     
     # 注册 AI 分析任务
-    from ai_analyzer import create_analyzer_from_env
+    from src.ai_engine.llm_analyzer import create_analyzer_from_env
     from rss_fetcher import get_recent_rss
     async def ai_task():
         analyzer = create_analyzer_from_env()

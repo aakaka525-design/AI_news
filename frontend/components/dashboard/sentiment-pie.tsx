@@ -12,7 +12,12 @@ export function SentimentPie() {
 
   if (isLoading) return <Skeleton className="h-52" />;
 
-  if (!data || data.total === 0) {
+  const total = data?.analyzed_count ?? 0;
+  const positive = data?.distribution?.positive ?? 0;
+  const neutral = data?.distribution?.neutral ?? 0;
+  const negative = data?.distribution?.negative ?? 0;
+
+  if (!data || total === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">
@@ -32,9 +37,9 @@ export function SentimentPie() {
         type: "pie" as const,
         radius: ["40%", "70%"],
         data: [
-          { value: data.positive, name: "积极", itemStyle: { color: "#22c55e" } },
-          { value: data.neutral, name: "中性", itemStyle: { color: "#94a3b8" } },
-          { value: data.negative, name: "消极", itemStyle: { color: "#ef4444" } },
+          { value: positive, name: "积极", itemStyle: { color: "#22c55e" } },
+          { value: neutral, name: "中性", itemStyle: { color: "#94a3b8" } },
+          { value: negative, name: "消极", itemStyle: { color: "#ef4444" } },
         ],
         label: { formatter: "{b}: {d}%" },
       },

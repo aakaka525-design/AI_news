@@ -104,7 +104,7 @@ export default function SettingsPage() {
                     <tr key={t.table} className="border-b">
                       <td className="py-2 font-mono text-xs">{t.table}</td>
                       <td className="py-2">{t.latest_date ?? "-"}</td>
-                      <td className="py-2">{t.row_count ?? "-"}</td>
+                      <td className="py-2">{t.record_count ?? t.row_count ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>

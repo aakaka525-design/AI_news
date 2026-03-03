@@ -473,8 +473,8 @@ def verify_migration():
                     min_d, max_d = cursor.fetchone()
                     if min_d and max_d:
                         date_range = f" ({min_d} ~ {max_d})"
-                except:
-                    pass
+                except Exception as e:
+                    log(f"   {table}: 日期范围查询失败 ({date_col}): {e}")
             
             log(f"   {table}: {count:,} 条{date_range}")
         except Exception as e:

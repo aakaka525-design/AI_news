@@ -36,11 +36,22 @@ class TokenBucket:
             rate: 每秒令牌生成速率
             capacity: 桶容量，默认为 rate
         """
+        if rate <= 0:
+            raise ValueError("rate must be > 0")
+
         self.rate = rate
-        self.capacity = capacity or int(rate)
+        self.capacity = capacity if capacity is not None else max(1, int(rate))
+        if self.capacity <= 0:
+            raise ValueError("capacity must be > 0")
         self.tokens = self.capacity
         self.last_time = time.monotonic()
         self._lock = threading.Lock()
+
+    def _validate_request_tokens(self, tokens: int) -> None:
+        if tokens <= 0:
+            raise ValueError("tokens must be > 0")
+        if tokens > self.capacity:
+            raise ValueError("tokens cannot exceed bucket capacity")
     
     def _refill(self):
         """补充令牌"""
@@ -61,44 +72,40 @@ class TokenBucket:
         Returns:
             是否成功获取令牌
         """
-        with self._lock:
-            self._refill()
-            
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            
-            if not blocking:
-                return False
-            
-            # 计算需要等待的时间
-            wait_time = (tokens - self.tokens) / self.rate
-        
-        # 在锁外等待
-        time.sleep(wait_time)
-        
-        with self._lock:
-            self._refill()
-            self.tokens -= tokens
-            return True
+        self._validate_request_tokens(tokens)
+
+        while True:
+            with self._lock:
+                self._refill()
+
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return True
+
+                if not blocking:
+                    return False
+
+                # 计算需要等待的时间
+                wait_time = (tokens - self.tokens) / self.rate
+
+            # 在锁外等待，避免阻塞其他调用
+            time.sleep(wait_time)
     
     async def acquire_async(self, tokens: int = 1) -> bool:
         """异步获取令牌"""
-        with self._lock:
-            self._refill()
-            
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            
-            wait_time = (tokens - self.tokens) / self.rate
-        
-        await asyncio.sleep(wait_time)
-        
-        with self._lock:
-            self._refill()
-            self.tokens -= tokens
-            return True
+        self._validate_request_tokens(tokens)
+
+        while True:
+            with self._lock:
+                self._refill()
+
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return True
+
+                wait_time = (tokens - self.tokens) / self.rate
+
+            await asyncio.sleep(wait_time)
 
 
 # ============================================================
@@ -169,7 +176,8 @@ def rate_limit_async(bucket: TokenBucket = None, tokens: int = 1):
 
 def create_rate_limiter(
     requests_per_minute: int = 300,
-    burst_capacity: int = None
+    burst_capacity: int = None,
+    strict: bool = False,
 ) -> TokenBucket:
     """
     创建自定义限流器
@@ -177,6 +185,7 @@ def create_rate_limiter(
     Args:
         requests_per_minute: 每分钟最大请求数
         burst_capacity: 突发容量，默认为每秒速率的2倍
+        strict: 是否启用严格模式（禁用突发容量）
         
     Returns:
         TokenBucket 实例
@@ -185,6 +194,14 @@ def create_rate_limiter(
         # 创建 100 请求/分钟的限流器
         bucket = create_rate_limiter(100)
     """
+    if requests_per_minute <= 0:
+        raise ValueError("requests_per_minute must be > 0")
+    if burst_capacity is not None and burst_capacity <= 0:
+        raise ValueError("burst_capacity must be > 0")
+
     rate = requests_per_minute / 60.0
-    capacity = burst_capacity or int(rate * 2)
+    if strict:
+        capacity = 1
+    else:
+        capacity = burst_capacity if burst_capacity is not None else max(1, int(rate * 2))
     return TokenBucket(rate=rate, capacity=capacity)

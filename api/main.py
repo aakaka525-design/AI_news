@@ -5,6 +5,7 @@ AI News Dashboard - FastAPI 服务
 
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,10 +13,12 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, Request, Depends, HTTPException, Header
+from fastapi import FastAPI, Request, Depends, HTTPException, Header, Query
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+import bleach
 import markdown
 
 # 导入响应模型
@@ -65,6 +68,38 @@ register_exception_handlers(app)
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 SCHEDULER_STATUS = {"running": False, "error": None}
+
+MARKDOWN_ALLOWED_TAGS = [
+    "p",
+    "br",
+    "ul",
+    "ol",
+    "li",
+    "strong",
+    "em",
+    "code",
+    "pre",
+    "blockquote",
+    "a",
+]
+MARKDOWN_ALLOWED_ATTRIBUTES = {
+    "a": ["href", "title", "target", "rel"],
+}
+
+
+def _raise_internal_error(message: str, exc: Exception) -> None:
+    raise HTTPException(status_code=500, detail=message) from exc
+
+
+def render_markdown_safely(content: str) -> str:
+    """Markdown 渲染后进行白名单清洗，避免 XSS。"""
+    raw_html = markdown.markdown(content or "")
+    return bleach.clean(
+        raw_html,
+        tags=MARKDOWN_ALLOWED_TAGS,
+        attributes=MARKDOWN_ALLOWED_ATTRIBUTES,
+        strip=True,
+    )
 
 
 # ============================================================
@@ -133,7 +168,7 @@ def get_recent_news(limit: int = 50) -> list[NewsRecord]:
             id=item["id"],
             title=item["title"],
             content=item["content"],
-            content_html=markdown.markdown(item["content"]),
+            content_html=render_markdown_safely(item["content"]),
             received_at=item["received_at"] or "",
             cleaned_data=item["cleaned_data"],
         ))
@@ -170,15 +205,35 @@ def save_analysis_result(date: str, input_count: int, result: dict) -> int:
 # ============================================================
 
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
+APP_ENV = os.getenv("ENV", os.getenv("APP_ENV", "dev")).strip().lower()
+API_KEY_REQUIRED = (
+    os.getenv("API_KEY_REQUIRED", "").strip().lower() in {"1", "true", "yes"}
+    or APP_ENV in {"prod", "production", "staging"}
+)
 
 async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
     """验证 API Key"""
     if not DASHBOARD_API_KEY:
+        if API_KEY_REQUIRED:
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfigured: DASHBOARD_API_KEY is required",
+            )
         # 未配置 Key 时跳过验证（开发模式）
         return None
     if x_api_key != DASHBOARD_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API Key")
     return x_api_key
+
+
+async def verify_webhook_token(x_webhook_token: str = Header(None, alias="X-Webhook-Token")):
+    """可选 Webhook Token 校验。"""
+    if not WEBHOOK_SECRET:
+        return None
+    if x_webhook_token != WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+    return x_webhook_token
 
 
 # 任务执行锁 (P2 防重入)
@@ -188,12 +243,14 @@ _task_running = False
 
 
 # ============================================================
-# API 路由
+# 生命周期
 # ============================================================
 
-@app.on_event("startup")
 async def startup():
     """启动时初始化数据库和调度器"""
+    if API_KEY_REQUIRED and not DASHBOARD_API_KEY:
+        raise RuntimeError("DASHBOARD_API_KEY is required in the current environment")
+
     _repo.create_tables(_engine)
     print(f"📦 数据库初始化完成: {NEWS_DATABASE_URL}")
     print(f"🧹 数据清洗模块已加载")
@@ -220,7 +277,6 @@ async def startup():
             raise
 
 
-@app.on_event("shutdown")
 async def shutdown():
     """关闭时停止调度器"""
     scheduler_manager.stop()
@@ -228,8 +284,28 @@ async def shutdown():
     print(f"⏹️ 调度器已停止")
 
 
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    await startup()
+    try:
+        yield
+    finally:
+        await shutdown()
+
+
+app.router.lifespan_context = app_lifespan
+
+
+# ============================================================
+# API 路由
+# ============================================================
+
+
 @app.post("/webhook/receive", response_model=WebhookResponse)
-async def receive_webhook(payload: WebhookPayload):
+async def receive_webhook(
+    payload: WebhookPayload,
+    _: None = Depends(verify_webhook_token),
+):
     """
     接收 TrendRadar Webhook 推送
     自动进行数据清洗
@@ -255,7 +331,7 @@ async def receive_webhook(payload: WebhookPayload):
 
 
 @app.post("/api/clean")
-async def clean_data(request: CleanRequest):
+async def clean_data(request: CleanRequest, _: None = Depends(verify_api_key)):
     """
     清洗数据 API
     
@@ -283,7 +359,7 @@ async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verif
         }
     
     # 查询数据
-    news_items = get_news_by_date(request.date, request.limit)
+    news_items = await run_in_threadpool(get_news_by_date, request.date, request.limit)
     if not news_items:
         return {
             "error": f"未找到 {request.date} 的新闻数据",
@@ -295,7 +371,12 @@ async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verif
     
     # 保存结果
     if "error" not in result:
-        analysis_id = save_analysis_result(request.date, len(news_items), result)
+        analysis_id = await run_in_threadpool(
+            save_analysis_result,
+            request.date,
+            len(news_items),
+            result,
+        )
         result["analysis_id"] = analysis_id
         result["input_count"] = len(news_items)
         result["date"] = request.date
@@ -306,7 +387,7 @@ async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verif
 @app.get("/api/analysis/{analysis_id}")
 async def get_analysis(analysis_id: int):
     """获取历史分析结果"""
-    row = _repo.get_analysis_by_id(analysis_id)
+    row = await run_in_threadpool(_repo.get_analysis_by_id, analysis_id)
     if not row:
         return {"error": "分析结果不存在"}
     return row
@@ -315,9 +396,9 @@ async def get_analysis(analysis_id: int):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """首页 - 展示最近热点"""
-    news_list = get_recent_news(limit=50)
-    total_count = get_news_count()
-    hotspots = get_all_hotspots()
+    news_list = await run_in_threadpool(get_recent_news, 50)
+    total_count = await run_in_threadpool(get_news_count)
+    hotspots = await run_in_threadpool(get_all_hotspots)
     
     return templates.TemplateResponse(
         "index.html",
@@ -338,19 +419,20 @@ async def console(request: Request):
 
 
 @app.get("/api/news", response_model=NewsListResponse)
-async def api_news(limit: int = 50):
+async def api_news(limit: int = Query(50, ge=1, le=500)):
     """API - 获取新闻列表（含清洗数据）"""
-    news_list = get_recent_news(limit=limit)
+    news_list = await run_in_threadpool(get_recent_news, limit)
+    total = await run_in_threadpool(get_news_count)
     return {
-        "total": get_news_count(),
-        "data": [n.dict() for n in news_list]
+        "total": total,
+        "data": [n.model_dump() for n in news_list]
     }
 
 
 @app.get("/api/hotspots")
 async def api_hotspots():
     """API - 获取热点关键词统计"""
-    hotspots = get_all_hotspots()
+    hotspots = await run_in_threadpool(get_all_hotspots)
     return {
         "total": len(hotspots),
         "data": [{"keyword": k, "count": c} for k, c in hotspots]
@@ -360,7 +442,7 @@ async def api_hotspots():
 @app.get("/api/facts/{news_id}")
 async def api_facts(news_id: int):
     """API - 获取单条新闻的结构化事实"""
-    row = _repo.get_news_by_id(news_id)
+    row = await run_in_threadpool(_repo.get_news_by_id, news_id)
     if not row or not row.get("cleaned_data"):
         return {"error": "Not found or not cleaned"}
     return row["cleaned_data"]
@@ -372,7 +454,7 @@ async def health():
     db_ok = True
     db_error = None
     try:
-        db_ok = _repo.health_check()
+        db_ok = await run_in_threadpool(_repo.health_check)
     except Exception as e:
         db_ok = False
         db_error = str(e)
@@ -381,7 +463,7 @@ async def health():
     status = "healthy" if db_ok and scheduler_ok else "degraded"
     return {
         "status": status,
-        "db": {"url": str(NEWS_DATABASE_URL), "ok": db_ok, "error": db_error},
+        "db": {"ok": db_ok, "error": db_error},
         "scheduler": {
             "running": scheduler_ok,
             "error": SCHEDULER_STATUS["error"],
@@ -395,7 +477,7 @@ async def health():
 # ============================================================
 
 @app.post("/api/rss/fetch")
-async def fetch_rss():
+async def fetch_rss(_: None = Depends(verify_api_key)):
     """抓取 RSS 订阅源"""
     try:
         from rss_fetcher import run_rss_fetch, DEFAULT_FEEDS
@@ -406,22 +488,25 @@ async def fetch_rss():
             "sources": [f["name"] for f in DEFAULT_FEEDS]
         }
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("rss fetch failed", e)
 
 
 @app.get("/api/rss")
-async def get_rss(limit: int = 50):
+async def get_rss(limit: int = Query(50, ge=1, le=500)):
     """获取 RSS 条目列表"""
     try:
         from rss_fetcher import get_recent_rss
-        items = get_recent_rss(limit=limit)
+        items = await run_in_threadpool(get_recent_rss, limit)
         return {"total": len(items), "data": items}
     except Exception as e:
-        return {"error": str(e), "data": []}
+        _raise_internal_error("rss list failed", e)
 
 
 @app.post("/api/rss/analyze")
-async def analyze_rss_sentiment(limit: int = 10):
+async def analyze_rss_sentiment(
+    limit: int = Query(10, ge=1, le=500),
+    _: None = Depends(verify_api_key),
+):
     """对 RSS 新闻进行情感分析"""
     try:
         from src.ai_engine.sentiment import analyze_pending_news, get_sentiment_stats
@@ -429,7 +514,7 @@ async def analyze_rss_sentiment(limit: int = 10):
         stats = get_sentiment_stats()
         return {"analysis": result, "stats": stats}
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("rss analysis failed", e)
 
 
 @app.get("/api/rss/sentiment_stats")
@@ -437,9 +522,9 @@ async def get_rss_sentiment_stats():
     """获取情感分析统计"""
     try:
         from src.ai_engine.sentiment import get_sentiment_stats
-        return get_sentiment_stats()
+        return await run_in_threadpool(get_sentiment_stats)
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("rss sentiment stats failed", e)
 
 
 # ============================================================
@@ -447,7 +532,7 @@ async def get_rss_sentiment_stats():
 # ============================================================
 
 @app.get("/api/scheduler/jobs")
-async def get_scheduler_jobs():
+async def get_scheduler_jobs(_: None = Depends(verify_api_key)):
     """获取所有调度任务状态"""
     try:
         jobs = scheduler_manager.get_jobs()
@@ -468,11 +553,11 @@ async def get_scheduler_jobs():
             ]
         }
     except Exception as e:
-        return {"error": str(e), "jobs": []}
+        _raise_internal_error("scheduler jobs failed", e)
 
 
 @app.post("/api/scheduler/trigger/{job_id}")
-async def trigger_scheduler_job(job_id: str):
+async def trigger_scheduler_job(job_id: str, _: None = Depends(verify_api_key)):
     """手动触发任务"""
     try:
         result = await scheduler_manager.trigger_job(job_id)
@@ -484,11 +569,11 @@ async def trigger_scheduler_job(job_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_internal_error("scheduler trigger failed", e)
 
 
 @app.post("/api/scheduler/pause/{job_id}")
-async def pause_scheduler_job(job_id: str):
+async def pause_scheduler_job(job_id: str, _: None = Depends(verify_api_key)):
     """暂停任务"""
     success = scheduler_manager.pause_job(job_id)
     if success:
@@ -497,7 +582,7 @@ async def pause_scheduler_job(job_id: str):
 
 
 @app.post("/api/scheduler/resume/{job_id}")
-async def resume_scheduler_job(job_id: str):
+async def resume_scheduler_job(job_id: str, _: None = Depends(verify_api_key)):
     """恢复任务"""
     success = scheduler_manager.resume_job(job_id)
     if success:
@@ -506,7 +591,11 @@ async def resume_scheduler_job(job_id: str):
 
 
 @app.get("/api/scheduler/history/{job_id}")
-async def get_scheduler_history(job_id: str, limit: int = 10):
+async def get_scheduler_history(
+    job_id: str,
+    limit: int = 10,
+    _: None = Depends(verify_api_key),
+):
     """获取任务执行历史"""
     history = scheduler_manager.get_task_history(job_id, limit)
     return {"job_id": job_id, "history": history}
@@ -629,36 +718,43 @@ async def run_scheduled_task(
 # ============================================================
 
 @app.get("/api/research/reports")
-async def get_research_reports(stock_code: str = None, limit: int = 20):
+async def get_research_reports(
+    stock_code: str = None,
+    limit: int = Query(20, ge=1, le=500),
+):
     """获取研报列表"""
     try:
         from fetchers.research_report import get_latest_reports, get_stock_reports
         
         if stock_code:
-            reports = get_stock_reports(stock_code, limit=limit)
+            reports = await run_in_threadpool(get_stock_reports, stock_code, limit)
         else:
-            reports = get_latest_reports(limit=limit)
+            reports = await run_in_threadpool(get_latest_reports, limit)
         
         return {"total": len(reports), "data": reports}
     except Exception as e:
-        return {"error": str(e), "data": []}
+        _raise_internal_error("research reports failed", e)
 
 
 @app.post("/api/research/fetch")
-async def fetch_research_reports(stock_code: str = None, limit: int = 30):
+async def fetch_research_reports(
+    stock_code: str = None,
+    limit: int = Query(30, ge=1, le=500),
+    _: None = Depends(verify_api_key),
+):
     """抓取研报数据"""
     try:
         from fetchers.research_report import fetch_stock_reports, save_reports, fetch_hot_stock_reports
         
         if stock_code:
-            reports = fetch_stock_reports(stock_code)
-            saved = save_reports(reports)
+            reports = await run_in_threadpool(fetch_stock_reports, stock_code)
+            saved = await run_in_threadpool(save_reports, reports)
             return {"stock_code": stock_code, "fetched": len(reports), "saved": saved}
         else:
-            total = fetch_hot_stock_reports(limit=limit)
+            total = await run_in_threadpool(fetch_hot_stock_reports, limit)
             return {"fetched": total}
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("research fetch failed", e)
 
 
 @app.get("/api/research/stats")
@@ -666,9 +762,9 @@ async def get_research_stats():
     """获取研报统计"""
     try:
         from fetchers.research_report import get_rating_stats
-        return get_rating_stats()
+        return await run_in_threadpool(get_rating_stats)
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("research stats failed", e)
 
 
 # ============================================================
@@ -676,51 +772,59 @@ async def get_research_stats():
 # ============================================================
 
 @app.get("/api/anomalies")
-async def get_anomalies(stock_code: str = None, days: int = 7, limit: int = 50):
+async def get_anomalies(
+    stock_code: str = None,
+    days: int = Query(7, ge=1, le=365),
+    limit: int = Query(50, ge=1, le=500),
+):
     """获取技术面异常信号"""
     try:
-        from fetchers.anomaly_detector import get_recent_anomalies, get_stock_anomalies
+        from src.analysis.anomaly import get_recent_anomalies, get_stock_anomalies
         
         if stock_code:
-            anomalies = get_stock_anomalies(stock_code, days=days)
+            anomalies = await run_in_threadpool(get_stock_anomalies, stock_code, days)
         else:
-            anomalies = get_recent_anomalies(days=days, limit=limit)
+            anomalies = await run_in_threadpool(get_recent_anomalies, days, limit)
         
         return {"total": len(anomalies), "data": anomalies}
     except Exception as e:
-        return {"error": str(e), "data": []}
+        _raise_internal_error("anomalies query failed", e)
 
 
 @app.post("/api/anomalies/detect")
-async def detect_anomalies(stock_code: str = None, limit: int = 50):
+async def detect_anomalies(
+    stock_code: str = None,
+    limit: int = Query(50, ge=1, le=500),
+    _: None = Depends(verify_api_key),
+):
     """运行异常检测"""
     try:
-        from fetchers.anomaly_detector import (
+        from src.analysis.anomaly import (
             detect_all_hot_stocks,
             detect_anomalies_for_stock,
             init_anomaly_table,
         )
         
-        init_anomaly_table()
+        await run_in_threadpool(init_anomaly_table)
         
         if stock_code:
-            result = detect_anomalies_for_stock(stock_code)
+            result = await run_in_threadpool(detect_anomalies_for_stock, stock_code)
             return {"stock_code": stock_code, "result": result}
         else:
-            result = detect_all_hot_stocks(limit=limit)
+            result = await run_in_threadpool(detect_all_hot_stocks, limit)
             return {"result": result}
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("anomalies detect failed", e)
 
 
 @app.get("/api/anomalies/stats")
 async def get_anomaly_stats():
     """获取异常统计"""
     try:
-        from fetchers.anomaly_detector import get_anomaly_stats
-        return get_anomaly_stats()
+        from src.analysis.anomaly import get_anomaly_stats
+        return await run_in_threadpool(get_anomaly_stats)
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("anomalies stats failed", e)
 
 
 # ============================================================
@@ -732,9 +836,9 @@ async def check_data_integrity():
     """检查数据完整性"""
     try:
         from fetchers.integrity_checker import generate_integrity_report
-        return generate_integrity_report()
+        return await run_in_threadpool(generate_integrity_report)
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("integrity check failed", e)
 
 
 @app.get("/api/integrity/freshness")
@@ -742,9 +846,10 @@ async def check_data_freshness():
     """检查数据新鲜度"""
     try:
         from fetchers.integrity_checker import check_table_freshness
-        return {"tables": check_table_freshness()}
+        tables = await run_in_threadpool(check_table_freshness)
+        return {"tables": tables}
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("freshness check failed", e)
 
 
 # ============================================================
@@ -769,4 +874,4 @@ async def is_trading_day(date: str = None):
             "latest_trading_day": get_latest_trading_day()
         }
     except Exception as e:
-        return {"error": str(e)}
+        _raise_internal_error("trading day check failed", e)

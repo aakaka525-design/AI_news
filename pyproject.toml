@@ -20,6 +20,7 @@ dependencies = [
     "feedparser>=6.0.0",
     "apscheduler>=3.10.0",
     "markdown>=3.6",
+    "bleach>=6.1.0",
     "pytest>=7.0.0",
 ]
 

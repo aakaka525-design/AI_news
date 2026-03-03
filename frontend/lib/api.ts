@@ -24,11 +24,23 @@ async function fetchApi<T>(
       if (v !== undefined && v !== null) url.searchParams.set(k, v);
     });
   }
-  const res = await fetch(url.toString());
+  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY;
+  const headers: HeadersInit = apiKey ? { "X-API-Key": apiKey } : {};
+  const res = await fetch(url.toString(), { headers });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  const data: unknown = await res.json();
+  if (data && typeof data === "object") {
+    const payload = data as { error?: unknown; detail?: unknown };
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      throw new Error(payload.error);
+    }
+    if (typeof payload.detail === "string" && payload.detail.trim()) {
+      throw new Error(payload.detail);
+    }
+  }
+  return data as T;
 }
 
 // Health

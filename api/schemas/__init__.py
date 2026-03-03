@@ -5,10 +5,20 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class HealthDBStatus(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+
+
+class HealthSchedulerStatus(BaseModel):
+    running: bool
+    error: Optional[str] = None
+
+
 class HealthResponse(BaseModel):
     status: str
-    db: str
-    scheduler: str
+    db: HealthDBStatus
+    scheduler: HealthSchedulerStatus
     version: str
 
 

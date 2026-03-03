@@ -12,6 +12,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from pathlib import Path
+from pydantic import BaseModel
 
 from .proxy_pool import ProxyPool
 
@@ -22,6 +23,21 @@ MAX_WORKERS = 30
 
 # 东方财富资金流日K API（历史接口）
 EM_MONEY_FLOW_API = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
+
+
+class MainMoneyFlowRecord(BaseModel):
+    """主力资金流记录模型（用于入库前校验）"""
+
+    stock_code: str
+    date: str
+    main_net_inflow: float | None = None
+    super_large_net: float | None = None
+    large_net: float | None = None
+    medium_net: float | None = None
+    small_net: float | None = None
+    main_net_ratio: float | None = None
+    close_price: float | None = None
+    change_pct: float | None = None
 
 
 def log(msg: str):
@@ -153,7 +169,6 @@ def save_money_flows(records: list[dict]):
     if not records:
         return 0
 
-    from fetchers.models import MainMoneyFlow
     from fetchers.db import validate_and_create, insert_validated
 
     conn = get_connection()
@@ -164,7 +179,7 @@ def save_money_flows(records: list[dict]):
             continue
 
         # 使用 Pydantic 验证
-        validated = validate_and_create(MainMoneyFlow, r)
+        validated = validate_and_create(MainMoneyFlowRecord, r)
         if validated is None:
             continue  # 验证失败，跳过
 
@@ -191,7 +206,7 @@ async def fetch_concurrent(stock_codes: list, proxy_pool: ProxyPool, days: int =
         async with semaphore:
             return await fetch_single_money_flow(session, code, proxy_pool, days)
 
-    connector = aiohttp.TCPConnector(limit=MAX_WORKERS * 2, ssl=False)
+    connector = aiohttp.TCPConnector(limit=MAX_WORKERS * 2)
     async with aiohttp.ClientSession(connector=connector) as session:
         batch_size = 50  # 因为每只股票返回30条，减小批次
         for batch_start in range(0, len(stock_codes), batch_size):

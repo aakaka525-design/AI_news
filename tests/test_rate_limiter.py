@@ -58,6 +58,19 @@ class TestTokenBucket:
         elapsed = time.time() - start
         
         assert elapsed >= 0.09  # 允许一点误差
+
+    def test_init_rejects_non_positive_rate(self):
+        from src.utils.rate_limiter import TokenBucket
+
+        with pytest.raises(ValueError):
+            TokenBucket(rate=0, capacity=1)
+
+    def test_acquire_rejects_request_larger_than_capacity(self):
+        from src.utils.rate_limiter import TokenBucket
+
+        bucket = TokenBucket(rate=1, capacity=1)
+        with pytest.raises(ValueError):
+            bucket.acquire(tokens=2, blocking=True)
     
     def test_rate_limit_decorator(self):
         """测试限流装饰器"""
@@ -150,43 +163,56 @@ class TestTokenBucket:
 
 class TestRateLimitStrict:
     """严格限流测试"""
+
+    def test_strict_mode_disables_burst(self):
+        from src.utils.rate_limiter import create_rate_limiter
+
+        bucket = create_rate_limiter(requests_per_minute=300, strict=True)
+        assert bucket.capacity == 1
+
+    def test_create_rate_limiter_rejects_invalid_rpm(self):
+        from src.utils.rate_limiter import create_rate_limiter
+
+        with pytest.raises(ValueError):
+            create_rate_limiter(requests_per_minute=0)
     
-    @pytest.mark.slow
-    def test_305_requests_over_60_seconds(self):
+    def test_305_requests_over_60_seconds(self, monkeypatch):
         """
-        验证 305 次请求严格耗时 > 60 秒
+        验证 305 次请求严格耗时 > 60 秒（虚拟时钟，不做真实等待）
         
         这是 Tushare 的核心限制验证：
         - 300 请求/分钟
         - 305 次应该需要超过 60 秒
         
-        注意：此测试较慢，使用 pytest -m slow 运行
+        使用 monkeypatch 驱动虚拟时间，避免 CI 真实等待 60+ 秒。
         """
-        from src.utils.rate_limiter import create_rate_limiter, rate_limit
+        import src.utils.rate_limiter as rl
+
+        current = 0.0
+
+        def fake_monotonic():
+            return current
+
+        def fake_sleep(seconds: float):
+            nonlocal current
+            current += max(seconds, 1e-6)
+
+        monkeypatch.setattr(rl.time, "monotonic", fake_monotonic)
+        monkeypatch.setattr(rl.time, "sleep", fake_sleep)
         
-        bucket = create_rate_limiter(requests_per_minute=300)
+        bucket = rl.create_rate_limiter(requests_per_minute=300, strict=True)
         request_count = 0
         
-        @rate_limit(bucket=bucket)
+        @rl.rate_limit(bucket=bucket)
         def mock_request():
             nonlocal request_count
             request_count += 1
         
-        print("\n开始 305 次请求测试...")
-        start = time.time()
-        
-        for i in range(305):
+        for _ in range(305):
             mock_request()
-            if (i + 1) % 50 == 0:
-                elapsed = time.time() - start
-                rate = (i + 1) / elapsed * 60
-                print(f"   进度: {i + 1}/305, 已用 {elapsed:.1f}s, 速率 {rate:.1f}/分钟")
-        
-        elapsed = time.time() - start
-        actual_rate = request_count / elapsed * 60
-        
-        print(f"\n完成! 总耗时: {elapsed:.2f}s")
-        print(f"实际速率: {actual_rate:.1f} 请求/分钟")
+
+        elapsed = current
+        actual_rate = request_count / elapsed * 60 if elapsed else float("inf")
         
         assert request_count == 305
         assert elapsed > 60, f"305 次请求应耗时 > 60s，实际 {elapsed:.2f}s"
