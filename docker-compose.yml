@@ -6,8 +6,8 @@ services:
     networks:
       - news_network
     volumes:
-      - ./trendradar/config:/app/config:ro
-      - ./trendradar/output:/app/output
+      - trendradar_config:/app/config:ro
+      - trendradar_output:/app/output
     environment:
       - TZ=Asia/Shanghai
       - ENABLE_CRAWLER=${ENABLE_CRAWLER:-true}
@@ -27,10 +27,8 @@ services:
       - dashboard
 
   dashboard:
-    build:
-      context: .
-      dockerfile: my_dashboard/Dockerfile
-    container_name: my_dashboard
+    build: .
+    container_name: ainews_dashboard
     restart: unless-stopped
     networks:
       - news_network
@@ -95,10 +93,7 @@ services:
     ports:
       - "8180:8080"
     volumes:
-      # NocoDB 自身数据存储
-      - ./nocodb_data:/usr/app/data
-      # 挂载项目数据库目录
-      - ./data:/app/project_data
+      - nocodb_data:/usr/app/data
     environment:
       - TZ=Asia/Shanghai
       - NC_DB=pg://nocodb_meta:5432?u=postgres&p=password&d=nocodb
@@ -113,7 +108,7 @@ services:
     networks:
       - news_network
     volumes:
-      - ./nocodb_pg_data:/var/lib/postgresql/data
+      - nocodb_pgdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
@@ -145,3 +140,7 @@ networks:
 
 volumes:
   pgdata:
+  nocodb_data:
+  nocodb_pgdata:
+  trendradar_config:
+  trendradar_output:
