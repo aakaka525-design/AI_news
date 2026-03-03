@@ -4,9 +4,6 @@
 
 # Data
 data/
-trendradar/output/
-nocodb_data/
-nocodb_pg_data/
 
 # Python
 __pycache__/
@@ -17,6 +14,17 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# Coverage
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# SQLite WAL
+*.db-shm
+*.db-wal
+
 # IDE
 .idea/
 .vscode/
@@ -26,5 +34,5 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Legacy
-legacy_archive/
+# Claude Code
+.claude/
