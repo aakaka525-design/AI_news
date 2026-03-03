@@ -1,0 +1,33 @@
+# TrendRadar 配置
+# 文档: https://github.com/wantcat/trendradar
+
+app:
+  timezone: Asia/Shanghai
+
+# 爬虫平台
+platforms:
+  enabled: true
+  sources:
+    - weibo
+    - baidu
+    - toutiao
+    - zhihu
+
+# 报告
+report:
+  mode: incremental
+  display_mode: keyword
+  rank_threshold: 10
+
+# 通知 (通过环境变量配置具体渠道)
+notification:
+  enabled: true
+
+# RSS 订阅 (可选)
+rss:
+  enabled: false
+  feeds: []
+
+# AI 分析 (通过环境变量 AI_API_KEY 等配置)
+ai:
+  enabled: false

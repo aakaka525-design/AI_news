@@ -6,7 +6,7 @@ services:
     networks:
       - news_network
     volumes:
-      - trendradar_config:/app/config:ro
+      - ./trendradar/config:/app/config:ro
       - trendradar_output:/app/output
     environment:
       - TZ=Asia/Shanghai
@@ -142,5 +142,4 @@ volumes:
   pgdata:
   nocodb_data:
   nocodb_pgdata:
-  trendradar_config:
   trendradar_output:
