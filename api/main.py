@@ -22,13 +22,13 @@ import markdown
 from api.schemas import NewsListResponse, WebhookResponse
 
 # 导入数据清洗模块
-from cleaner import clean_raw_data, clean_and_export, CleanedData
+from src.analysis.cleaner import clean_raw_data, clean_and_export, CleanedData
 
 # 导入 AI 分析模块
-from ai_analyzer import AIAnalyzer, create_analyzer_from_env
+from src.ai_engine.llm_analyzer import AIAnalyzer, create_analyzer_from_env
 
 # 导入调度器模块
-from scheduler import scheduler_manager, register_default_tasks
+from api.scheduler import scheduler_manager, register_default_tasks
 
 # 导入数据库引擎和仓储层
 from src.database.engine import create_engine_from_url, get_session_factory
@@ -424,7 +424,7 @@ async def get_rss(limit: int = 50):
 async def analyze_rss_sentiment(limit: int = 10):
     """对 RSS 新闻进行情感分析"""
     try:
-        from sentiment_analyzer import analyze_pending_news, get_sentiment_stats
+        from src.ai_engine.sentiment import analyze_pending_news, get_sentiment_stats
         result = await analyze_pending_news(limit=limit)
         stats = get_sentiment_stats()
         return {"analysis": result, "stats": stats}
@@ -436,7 +436,7 @@ async def analyze_rss_sentiment(limit: int = 10):
 async def get_rss_sentiment_stats():
     """获取情感分析统计"""
     try:
-        from sentiment_analyzer import get_sentiment_stats
+        from src.ai_engine.sentiment import get_sentiment_stats
         return get_sentiment_stats()
     except Exception as e:
         return {"error": str(e)}

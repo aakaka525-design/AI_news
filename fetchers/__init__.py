@@ -1,0 +1,1 @@
+"""Legacy fetchers compatibility package."""
