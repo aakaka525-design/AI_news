@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchHealth,
   fetchHotspots,
@@ -12,6 +12,9 @@ import {
   fetchSchedulerJobs,
   fetchFreshness,
   fetchTradingDay,
+  triggerJob,
+  pauseJob,
+  resumeJob,
 } from "./api";
 
 export const useHealth = () =>
@@ -49,6 +52,17 @@ export const useRss = (limit = 50) =>
 
 export const useSchedulerJobs = () =>
   useQuery({ queryKey: ["scheduler-jobs"], queryFn: fetchSchedulerJobs });
+
+export function useJobAction() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduler-jobs"] });
+
+  const trigger = useMutation({ mutationFn: triggerJob, onSuccess: invalidate });
+  const pause = useMutation({ mutationFn: pauseJob, onSuccess: invalidate });
+  const resume = useMutation({ mutationFn: resumeJob, onSuccess: invalidate });
+
+  return { trigger, pause, resume };
+}
 
 export const useFreshness = () =>
   useQuery({ queryKey: ["freshness"], queryFn: fetchFreshness });

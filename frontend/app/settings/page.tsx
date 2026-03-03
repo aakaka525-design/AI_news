@@ -3,12 +3,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useSchedulerJobs, useFreshness, useHealth } from "@/lib/hooks";
+import { Button } from "@/components/ui/button";
+import { useSchedulerJobs, useFreshness, useHealth, useJobAction } from "@/lib/hooks";
 
 export default function SettingsPage() {
   const health = useHealth();
   const scheduler = useSchedulerJobs();
   const freshness = useFreshness();
+  const { trigger, pause, resume } = useJobAction();
 
   return (
     <div className="space-y-6">
@@ -70,9 +72,38 @@ export default function SettingsPage() {
                       上次运行: {job.last_run ?? "无"} · 执行次数: {job.run_count}
                     </p>
                   </div>
-                  <Badge variant={job.enabled ? "default" : "secondary"}>
-                    {job.enabled ? "启用" : "禁用"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={trigger.isPending}
+                      onClick={() => trigger.mutate(job.id)}
+                    >
+                      执行
+                    </Button>
+                    {job.enabled ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={pause.isPending}
+                        onClick={() => pause.mutate(job.id)}
+                      >
+                        暂停
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        disabled={resume.isPending}
+                        onClick={() => resume.mutate(job.id)}
+                      >
+                        恢复
+                      </Button>
+                    )}
+                    <Badge variant={job.enabled ? "default" : "secondary"}>
+                      {job.enabled ? "启用" : "禁用"}
+                    </Badge>
+                  </div>
                 </div>
               ))}
             </div>

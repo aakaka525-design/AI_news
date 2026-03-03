@@ -85,6 +85,26 @@ export const fetchAnomalyStats = () =>
 export const fetchSchedulerJobs = () =>
   fetchApi<SchedulerJobsResponse>("/api/scheduler/jobs");
 
+async function postApi<T>(path: string): Promise<T> {
+  const url = new URL(path, API_BASE_URL);
+  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY;
+  const headers: HeadersInit = { "Content-Type": "application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}) };
+  const res = await fetch(url.toString(), { method: "POST", headers });
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const triggerJob = (jobId: string) =>
+  postApi<{ status: string }>(`/api/scheduler/trigger/${jobId}`);
+
+export const pauseJob = (jobId: string) =>
+  postApi<{ status: string }>(`/api/scheduler/pause/${jobId}`);
+
+export const resumeJob = (jobId: string) =>
+  postApi<{ status: string }>(`/api/scheduler/resume/${jobId}`);
+
 // Calendar
 export const fetchTradingDay = (date?: string) =>
   fetchApi<TradingDayResponse>(
