@@ -12,9 +12,14 @@ import {
   fetchSchedulerJobs,
   fetchFreshness,
   fetchTradingDay,
+  fetchIntegrityCheck,
   triggerJob,
   pauseJob,
   resumeJob,
+  fetchRssManual,
+  fetchResearchManual,
+  detectAnomaliesManual,
+  analyzeManual,
 } from "./api";
 
 export const useHealth = () =>
@@ -66,6 +71,32 @@ export function useJobAction() {
 
 export const useFreshness = () =>
   useQuery({ queryKey: ["freshness"], queryFn: fetchFreshness });
+
+export const useIntegrityCheck = () =>
+  useQuery({ queryKey: ["integrity-check"], queryFn: fetchIntegrityCheck, enabled: false });
+
+export function useManualActions() {
+  const qc = useQueryClient();
+
+  const fetchRss = useMutation({
+    mutationFn: fetchRssManual,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rss"] }),
+  });
+  const fetchResearch = useMutation({
+    mutationFn: fetchResearchManual,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+  });
+  const detectAnomalies = useMutation({
+    mutationFn: detectAnomaliesManual,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["anomalies"] }),
+  });
+  const analyze = useMutation({
+    mutationFn: analyzeManual,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["news"] }),
+  });
+
+  return { fetchRss, fetchResearch, detectAnomalies, analyze };
+}
 
 export const useTradingDay = (date?: string) =>
   useQuery({ queryKey: ["trading-day", date], queryFn: () => fetchTradingDay(date) });

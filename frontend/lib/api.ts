@@ -85,25 +85,69 @@ export const fetchAnomalyStats = () =>
 export const fetchSchedulerJobs = () =>
   fetchApi<SchedulerJobsResponse>("/api/scheduler/jobs");
 
-async function postApi<T>(path: string): Promise<T> {
+async function postApi<T>(path: string, body?: unknown): Promise<T> {
   const url = new URL(path, API_BASE_URL);
   const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY;
   const headers: HeadersInit = { "Content-Type": "application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}) };
-  const res = await fetch(url.toString(), { method: "POST", headers });
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  const data: unknown = await res.json();
+  if (data && typeof data === "object") {
+    const payload = data as { error?: unknown; detail?: unknown };
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      throw new Error(payload.error);
+    }
+    if (typeof payload.detail === "string" && payload.detail.trim()) {
+      throw new Error(payload.detail);
+    }
+  }
+  return data as T;
 }
 
 export const triggerJob = (jobId: string) =>
-  postApi<{ status: string }>(`/api/scheduler/trigger/${jobId}`);
+  postApi<{ success: boolean; message: string; duration: number }>(`/api/scheduler/trigger/${jobId}`);
 
 export const pauseJob = (jobId: string) =>
-  postApi<{ status: string }>(`/api/scheduler/pause/${jobId}`);
+  postApi<{ message: string }>(`/api/scheduler/pause/${jobId}`);
 
 export const resumeJob = (jobId: string) =>
-  postApi<{ status: string }>(`/api/scheduler/resume/${jobId}`);
+  postApi<{ message: string }>(`/api/scheduler/resume/${jobId}`);
+
+// Manual triggers
+export const fetchRssManual = () =>
+  postApi<{ status: string; fetched: number; sources: string[] }>("/api/rss/fetch");
+
+export const fetchResearchManual = (stockCode?: string) =>
+  postApi<{ fetched: number; saved?: number; stock_code?: string }>(
+    "/api/research/fetch",
+    stockCode ? { stock_code: stockCode } : undefined,
+  );
+
+export const detectAnomaliesManual = (stockCode?: string) =>
+  postApi<{ result: Record<string, number>; stock_code?: string }>(
+    "/api/anomalies/detect",
+    stockCode ? { stock_code: stockCode } : undefined,
+  );
+
+export const analyzeManual = (date?: string) =>
+  postApi<{ analysis_summary?: string; analysis_id?: number; input_count?: number; date?: string; error?: string }>(
+    "/api/analyze",
+    date ? { date } : undefined,
+  );
+
+// Integrity
+export const fetchIntegrityCheck = () =>
+  fetchApi<{
+    generated_at: string;
+    checks: { freshness: Array<{ name: string; status: string; latest_date?: string }>; daily_coverage?: Record<string, unknown>; anomalies?: Array<Record<string, unknown>> };
+    summary: { stale_tables: number; empty_tables: number; low_coverage_days: number; total_issues: number };
+  }>("/api/integrity/check");
 
 // Calendar
 export const fetchTradingDay = (date?: string) =>
