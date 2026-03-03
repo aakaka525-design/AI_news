@@ -8,7 +8,8 @@ from py_clob_client.client import ClobClient
 logger = logging.getLogger(__name__)
 
 CLOB_HOST = "https://clob.polymarket.com"
-END_CURSOR = "DONE"
+# Cursors that indicate no more pages
+END_CURSORS = {"DONE", "LTE="}  # "LTE=" is base64 for "-1"
 
 
 class PolymarketClient:
@@ -36,8 +37,8 @@ class PolymarketClient:
             for raw in data:
                 all_markets.append(self._normalize(raw))
 
-            cursor = resp.get("next_cursor", END_CURSOR)
-            if cursor == END_CURSOR or not cursor:
+            cursor = resp.get("next_cursor", "DONE")
+            if cursor in END_CURSORS or not cursor:
                 break
 
         logger.info(f"Polymarket: fetched {len(all_markets)} active markets")

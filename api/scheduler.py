@@ -9,6 +9,7 @@
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Callable, Optional
 from dataclasses import dataclass, field
@@ -66,6 +67,13 @@ TASK_CONFIGS = {
         "minute": 0,
         "enabled": True,
         "description": "每日早间 AI 热点分析"
+    },
+    "polymarket_fetch": {
+        "name": "Polymarket 预测市场",
+        "trigger": "interval",
+        "minutes": int(os.getenv("POLYMARKET_FETCH_INTERVAL", "5")),
+        "enabled": os.getenv("POLYMARKET_ENABLED", "true").lower() == "true",
+        "description": "从 Polymarket 拉取预测市场数据，检测概率波动"
     },
 }
 
@@ -340,4 +348,24 @@ def register_default_tasks():
         subprocess.run(["python3", f"{project_root}/scripts/fetch_advanced_data.py"], check=True)
     scheduler_manager.register_task("macro_data", macro_task)
     
+    # 注册 Polymarket 预测市场任务
+    if os.getenv("POLYMARKET_ENABLED", "true").lower() == "true":
+        from src.data_ingestion.polymarket.fetcher import PolymarketFetcher
+        from src.data_ingestion.polymarket.models import PolymarketBase
+        from config.settings import NEWS_DATABASE_URL
+        from src.database.engine import create_engine_from_url, get_session_factory
+        from src.database.repositories.news import NewsRepository
+
+        pm_engine = create_engine_from_url(NEWS_DATABASE_URL)
+        pm_Session = get_session_factory(pm_engine)
+        pm_repo = NewsRepository(pm_Session)
+        PolymarketBase.metadata.create_all(pm_engine)
+
+        pm_fetcher = PolymarketFetcher(pm_Session, pm_repo)
+
+        def polymarket_task():
+            pm_fetcher.run()
+
+        scheduler_manager.register_task("polymarket_fetch", polymarket_task)
+
     logger.info("✅ 默认任务注册完成")
