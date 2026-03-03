@@ -1,0 +1,62 @@
+"""Polymarket SDK wrapper with pagination support."""
+
+import logging
+from typing import Any
+
+from py_clob_client.client import ClobClient
+
+logger = logging.getLogger(__name__)
+
+CLOB_HOST = "https://clob.polymarket.com"
+END_CURSOR = "DONE"
+
+
+class PolymarketClient:
+    """Wraps py-clob-client SDK, handles pagination, normalizes data."""
+
+    def __init__(self, host: str = CLOB_HOST):
+        self._sdk = ClobClient(host)
+
+    def get_active_markets(self) -> list[dict[str, Any]]:
+        """Fetch all active (sampling) markets, auto-paginating.
+
+        Returns a list of normalized market dicts with keys:
+          condition_id, question, description, tags, outcomes, prices,
+          clob_token_ids, image, end_date, active, closed
+        """
+        all_markets: list[dict[str, Any]] = []
+        cursor = "MA=="
+
+        while True:
+            resp = self._sdk.get_sampling_markets(cursor)
+            data = resp.get("data", [])
+            if not data:
+                break
+
+            for raw in data:
+                all_markets.append(self._normalize(raw))
+
+            cursor = resp.get("next_cursor", END_CURSOR)
+            if cursor == END_CURSOR or not cursor:
+                break
+
+        logger.info(f"Polymarket: fetched {len(all_markets)} active markets")
+        return all_markets
+
+    @staticmethod
+    def _normalize(raw: dict) -> dict[str, Any]:
+        """Extract and flatten relevant fields from SDK response."""
+        tokens = raw.get("tokens", [])
+        return {
+            "condition_id": raw.get("condition_id", ""),
+            "question": raw.get("question", ""),
+            "description": raw.get("description", ""),
+            "tags": raw.get("tags", []),
+            "outcomes": [t.get("outcome", "") for t in tokens],
+            "prices": [t.get("price", 0) for t in tokens],
+            "clob_token_ids": [t.get("token_id", "") for t in tokens],
+            "image": raw.get("image", ""),
+            "end_date": raw.get("end_date_iso", ""),
+            "active": raw.get("active", False),
+            "closed": raw.get("closed", False),
+        }
