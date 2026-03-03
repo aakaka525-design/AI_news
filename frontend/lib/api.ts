@@ -119,6 +119,33 @@ export const pauseJob = (jobId: string) =>
 export const resumeJob = (jobId: string) =>
   postApi<{ message: string }>(`/api/scheduler/resume/${jobId}`);
 
+// News facts (detail)
+export const fetchNewsFacts = (newsId: number) =>
+  fetchApi<{
+    title: string;
+    summary: string;
+    facts: Array<{ fact: string; category: string }>;
+    hotspots: string[];
+    keywords: string[];
+    cleaned_at: string;
+  }>(`/api/facts/${newsId}`);
+
+// AI Analysis result
+export const fetchAnalysisResult = (analysisId: number) =>
+  fetchApi<{
+    id: number;
+    date: string;
+    input_count: number;
+    analysis_summary: string;
+    opportunities: Array<{
+      type?: string;
+      score?: number;
+      title?: string;
+      reasoning?: string;
+    }>;
+    analyzed_at: string;
+  }>(`/api/analysis/${analysisId}`);
+
 // Manual triggers
 export const fetchRssManual = () =>
   postApi<{ status: string; fetched: number; sources: string[] }>("/api/rss/fetch");

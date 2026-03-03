@@ -13,6 +13,7 @@ import {
   fetchFreshness,
   fetchTradingDay,
   fetchIntegrityCheck,
+  fetchNewsFacts,
   triggerJob,
   pauseJob,
   resumeJob,
@@ -74,6 +75,13 @@ export const useFreshness = () =>
 
 export const useIntegrityCheck = () =>
   useQuery({ queryKey: ["integrity-check"], queryFn: fetchIntegrityCheck, enabled: false });
+
+export const useNewsFacts = (newsId: number | null) =>
+  useQuery({
+    queryKey: ["news-facts", newsId],
+    queryFn: () => fetchNewsFacts(newsId!),
+    enabled: newsId !== null,
+  });
 
 export function useManualActions() {
   const qc = useQueryClient();
