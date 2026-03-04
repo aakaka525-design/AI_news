@@ -17,6 +17,11 @@ export function IndexCard({ item }: { item: IndexItem }) {
   const isUp = item.pct_chg >= 0;
   const color = isUp ? "text-red-500" : "text-green-500";
 
+  const upCount = item.up_count ?? 0;
+  const downCount = item.down_count ?? 0;
+  const total = upCount + downCount;
+  const upPct = total > 0 ? (upCount / total) * 100 : 50;
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -35,10 +40,18 @@ export function IndexCard({ item }: { item: IndexItem }) {
             {isUp ? "+" : ""}{item.pct_chg?.toFixed(2)}%
           </span>
         </div>
-        {(item.up_count != null || item.down_count != null) && (
-          <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
-            <span className="text-red-500">{item.up_count ?? "—"} 涨</span>
-            <span className="text-green-500">{item.down_count ?? "—"} 跌</span>
+        {total > 0 && (
+          <div className="mt-2">
+            <div className="flex h-1.5 rounded-full overflow-hidden bg-green-500">
+              <div
+                className="bg-red-500 transition-all"
+                style={{ width: `${upPct}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+              <span className="text-red-500">{upCount} 涨</span>
+              <span className="text-green-500">{downCount} 跌</span>
+            </div>
           </div>
         )}
       </CardContent>

@@ -11,7 +11,10 @@ import json
 import os
 import re
 from typing import Optional
-from openai import AsyncOpenAI
+from google import genai
+from google.genai.types import GenerateContentConfig
+
+from src.ai_engine.gemini_client import get_gemini_client, get_default_model
 
 # ============================================================
 # 配置
@@ -104,14 +107,10 @@ class AIAnalyzer:
     
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://api.deepseek.com/v1",
-        model: str = "deepseek-chat"
+        client: genai.Client,
+        model: str = "gemini-2.0-flash"
     ):
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url
-        )
+        self.client = client
         self.model = model
     
     async def analyze_opportunities(self, news_items: list[dict]) -> dict:
@@ -131,17 +130,16 @@ class AIAnalyzer:
         user_content = self._build_user_prompt(truncated)
         
         try:
-            response = await self.client.chat.completions.create(
+            response = await self.client.aio.models.generate_content(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                temperature=0.7,
-                max_tokens=4000  # 扩展结构需要更多 token
+                contents=f"{SYSTEM_PROMPT}\n\n{user_content}",
+                config=GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=4000,
+                ),
             )
-            
-            result_text = response.choices[0].message.content.strip()
+
+            result_text = (response.text or "").strip()
             
             # 尝试解析 JSON
             # 处理可能的 Markdown 代码块包裹
@@ -188,13 +186,12 @@ def create_analyzer_from_env() -> Optional[AIAnalyzer]:
     enabled = os.getenv("AI_ANALYSIS_ENABLED", "false").lower() == "true"
     if not enabled:
         return None
-    
-    api_key = os.getenv("AI_API_KEY")
-    if not api_key:
-        print("⚠️ AI_API_KEY 未配置")
+
+    client = get_gemini_client()
+    if not client:
+        print("⚠️ GEMINI_API_KEY 未配置")
         return None
-    
-    base_url = os.getenv("AI_BASE_URL", "https://api.deepseek.com/v1")
-    model = os.getenv("AI_MODEL", "deepseek-chat")
-    
-    return AIAnalyzer(api_key=api_key, base_url=base_url, model=model)
+
+    model = get_default_model()
+
+    return AIAnalyzer(client=client, model=model)

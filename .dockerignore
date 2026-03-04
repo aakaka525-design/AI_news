@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.next
+__pycache__
+*.pyc
+*.pyo
+data/
+*.db
+node_modules
+.env.local
+frontend/
+tests/
+*.md
+.pytest_cache

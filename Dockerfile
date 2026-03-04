@@ -16,8 +16,13 @@ COPY src/ src/
 COPY api/ api/
 COPY fetchers/ fetchers/
 COPY config/ config/
+COPY alembic.ini ./
+COPY alembic/ alembic/
+COPY docker/entrypoint.sh ./
 COPY rss_fetcher.py run.py ./
+
+RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["python", "run.py", "api"]
+CMD ["./entrypoint.sh"]

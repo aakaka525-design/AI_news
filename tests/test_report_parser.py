@@ -196,26 +196,24 @@ class TestAnalyzeAndSave:
 class TestAnalyzeReportWithLLM:
     @pytest.mark.asyncio
     async def test_returns_none_without_api_key(self):
-        with patch.dict("os.environ", {}, clear=True):
+        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=None):
             result = await analyze_report_with_llm({"report_title": "test"})
             assert result is None
 
     @pytest.mark.asyncio
     async def test_successful_analysis(self):
         mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(
-                message=MagicMock(
-                    content='{"core_logic": "增长强劲", "catalysts": ["新品"], "risks": ["竞争"], "sentiment_score": 0.8}'
-                )
-            )
-        ]
+        mock_response.text = '{"core_logic": "增长强劲", "catalysts": ["新品"], "risks": ["竞争"], "sentiment_score": 0.8}'
 
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        mock_aio_models = AsyncMock()
+        mock_aio_models.generate_content = AsyncMock(return_value=mock_response)
+        mock_aio = MagicMock()
+        mock_aio.models = mock_aio_models
+        mock_client = MagicMock()
+        mock_client.aio = mock_aio
 
-        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
-            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
+            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
                 result = await analyze_report_with_llm(
                     {
                         "report_title": "业绩超预期",
@@ -231,11 +229,15 @@ class TestAnalyzeReportWithLLM:
 
     @pytest.mark.asyncio
     async def test_handles_api_error(self):
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
+        mock_aio_models = AsyncMock()
+        mock_aio_models.generate_content = AsyncMock(side_effect=Exception("API error"))
+        mock_aio = MagicMock()
+        mock_aio.models = mock_aio_models
+        mock_client = MagicMock()
+        mock_client.aio = mock_aio
 
-        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
-            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
+            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
                 result = await analyze_report_with_llm(
                     {
                         "report_title": "test",
@@ -248,19 +250,17 @@ class TestAnalyzeReportWithLLM:
     @pytest.mark.asyncio
     async def test_extracts_json_from_markdown(self):
         mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(
-                message=MagicMock(
-                    content='```json\n{"core_logic": "test", "catalysts": [], "risks": [], "sentiment_score": 0.5}\n```'
-                )
-            )
-        ]
+        mock_response.text = '```json\n{"core_logic": "test", "catalysts": [], "risks": [], "sentiment_score": 0.5}\n```'
 
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        mock_aio_models = AsyncMock()
+        mock_aio_models.generate_content = AsyncMock(return_value=mock_response)
+        mock_aio = MagicMock()
+        mock_aio.models = mock_aio_models
+        mock_client = MagicMock()
+        mock_client.aio = mock_aio
 
-        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
-            with patch("src.ai_engine.report_parser.AsyncOpenAI", return_value=mock_client):
+        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
+            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
                 result = await analyze_report_with_llm(
                     {
                         "report_title": "test",

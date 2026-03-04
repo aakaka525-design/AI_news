@@ -45,9 +45,19 @@ export function NewsList() {
             >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-sm font-medium leading-tight">
-                    {item.title}
-                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-sm font-medium leading-tight">
+                      {item.title}
+                    </CardTitle>
+                    {item.source && (
+                      <Badge
+                        variant={item.source === "polymarket" ? "default" : "secondary"}
+                        className={`shrink-0 text-xs ${item.source === "polymarket" ? "bg-blue-500 hover:bg-blue-600" : ""}`}
+                      >
+                        {item.source === "polymarket" ? "Polymarket" : item.source}
+                      </Badge>
+                    )}
+                  </div>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {item.received_at
                       ? formatDistanceToNow(new Date(item.received_at), {

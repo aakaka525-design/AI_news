@@ -64,6 +64,7 @@ class News(_Base):
     cleaned_data = Column(Text, nullable=True)
     hotspots = Column(Text, nullable=True)
     keywords = Column(Text, nullable=True)
+    source = Column(Text, nullable=True)
     received_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (Index("idx_received_at", received_at.desc()),)
@@ -142,6 +143,7 @@ class NewsRepository:
         cleaned_data: Optional[str] = None,
         hotspots: Optional[str] = None,
         keywords: Optional[str] = None,
+        source: Optional[str] = None,
     ) -> int:
         """Insert a news record and return its id."""
         with self.Session() as session:
@@ -151,6 +153,7 @@ class NewsRepository:
                 cleaned_data=cleaned_data,
                 hotspots=hotspots,
                 keywords=keywords,
+                source=source,
             )
             session.add(row)
             session.commit()
@@ -183,6 +186,7 @@ class NewsRepository:
                         "title": r.title,
                         "content": r.content,
                         "cleaned_data": parsed_cleaned,
+                        "source": r.source,
                         "received_at": r.received_at.isoformat() if r.received_at else None,
                     }
                 )
@@ -212,6 +216,7 @@ class NewsRepository:
                 "cleaned_data": parsed_cleaned,
                 "hotspots": r.hotspots,
                 "keywords": r.keywords,
+                "source": r.source,
                 "received_at": r.received_at.isoformat() if r.received_at else None,
             }
 

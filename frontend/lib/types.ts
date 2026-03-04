@@ -12,6 +12,7 @@ export interface NewsItem {
     keywords?: string[];
     cleaned_at?: string;
   } | null;
+  source?: string | null;
 }
 
 export interface NewsListResponse {
@@ -111,6 +112,11 @@ export interface StockBasicItem {
   market?: string;
   area?: string;
   list_date?: string;
+  close?: number | null;
+  pct_chg?: number | null;
+  amount?: number | null;
+  turnover_rate?: number | null;
+  total_mv?: number | null;
 }
 
 export interface StockListResponse {
@@ -126,8 +132,13 @@ export interface ValuationItem {
   pe_ttm?: number | null;
   pb?: number | null;
   ps?: number | null;
+  ps_ttm?: number | null;
+  dv_ratio?: number | null;
+  dv_ttm?: number | null;
   total_mv?: number | null;
   circ_mv?: number | null;
+  total_share?: number | null;
+  float_share?: number | null;
   turnover_rate?: number | null;
   volume_ratio?: number | null;
 }
@@ -144,6 +155,19 @@ export interface StockProfileResponse {
   fullname?: string;
   is_hs?: string;
   valuation?: ValuationItem | null;
+}
+
+export interface ValuationHistoryItem {
+  trade_date: string;
+  pe_ttm?: number | null;
+  pb?: number | null;
+  ps_ttm?: number | null;
+  dv_ttm?: number | null;
+  total_mv?: number | null;
+}
+
+export interface ValuationHistoryResponse {
+  data: ValuationHistoryItem[];
 }
 
 export interface StockDailyItem {
@@ -291,4 +315,39 @@ export interface TableFreshness {
 
 export interface FreshnessResponse {
   tables: TableFreshness[];
+}
+
+// ===== Polymarket =====
+export interface PolymarketMarket {
+  condition_id: string;
+  question: string;
+  question_zh?: string | null;
+  description?: string | null;
+  tags?: string[] | null;
+  outcomes?: string[] | null;
+  outcome_prices?: number[] | null;
+  clob_token_ids?: string[] | null;
+  image?: string | null;
+  end_date?: string | null;
+  active: boolean;
+  closed: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PolymarketMarketsResponse {
+  total: number;
+  data: PolymarketMarket[];
+}
+
+export interface PolymarketSnapshot {
+  id: number;
+  market_id: string;
+  outcome_prices: number[] | null;
+  snapshot_time: string | null;
+}
+
+export interface PolymarketHistoryResponse {
+  total: number;
+  data: PolymarketSnapshot[];
 }

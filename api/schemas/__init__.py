@@ -29,6 +29,7 @@ class NewsItem(BaseModel):
     content_html: str
     received_at: str
     cleaned_data: Optional[dict] = None
+    source: Optional[str] = None
 
 
 class NewsListResponse(BaseModel):

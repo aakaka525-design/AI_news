@@ -10,6 +10,9 @@ import type {
   MarketOverviewResponse,
   MoneyFlowResponse,
   NewsListResponse,
+  PolymarketHistoryResponse,
+  PolymarketMarket,
+  PolymarketMarketsResponse,
   RatingStats,
   ResearchReportsResponse,
   RssResponse,
@@ -20,6 +23,7 @@ import type {
   StockListResponse,
   StockProfileResponse,
   TradingDayResponse,
+  ValuationHistoryResponse,
 } from "./types";
 
 async function fetchApi<T>(
@@ -203,6 +207,8 @@ export const fetchStocks = (
   search?: string,
   industry?: string,
   market?: string,
+  sortBy?: string,
+  sortOrder?: string,
 ) =>
   fetchApi<StockListResponse>("/api/stocks", {
     page: String(page),
@@ -210,6 +216,8 @@ export const fetchStocks = (
     ...(search ? { search } : {}),
     ...(industry ? { industry } : {}),
     ...(market ? { market } : {}),
+    ...(sortBy ? { sort_by: sortBy } : {}),
+    ...(sortOrder ? { sort_order: sortOrder } : {}),
   });
 
 export const fetchStockIndustries = () =>
@@ -228,6 +236,11 @@ export const fetchStockDaily = (
     limit: String(limit),
     ...(startDate ? { start_date: startDate } : {}),
     ...(endDate ? { end_date: endDate } : {}),
+  });
+
+export const fetchValuationHistory = (tsCode: string, limit = 250) =>
+  fetchApi<ValuationHistoryResponse>(`/api/stocks/${tsCode}/valuation-history`, {
+    limit: String(limit),
   });
 
 export const fetchMarketOverview = (tradeDate?: string) =>
@@ -261,3 +274,19 @@ export const fetchSectors = (blockType?: string, tradeDate?: string, limit = 50)
     ...(blockType ? { block_type: blockType } : {}),
     ...(tradeDate ? { trade_date: tradeDate } : {}),
   });
+
+// ===== Polymarket =====
+
+export const fetchPolymarketMarkets = (limit = 50) =>
+  fetchApi<PolymarketMarketsResponse>("/api/polymarket/markets", {
+    limit: String(limit),
+  });
+
+export const fetchPolymarketMarketDetail = (conditionId: string) =>
+  fetchApi<PolymarketMarket>(`/api/polymarket/markets/${conditionId}`);
+
+export const fetchPolymarketHistory = (conditionId: string, limit = 100) =>
+  fetchApi<PolymarketHistoryResponse>(
+    `/api/polymarket/markets/${conditionId}/history`,
+    { limit: String(limit) },
+  );

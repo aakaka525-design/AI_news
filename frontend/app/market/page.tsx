@@ -2,16 +2,29 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { IndexCard } from "@/components/market/index-card";
+import { MarketBreadth } from "@/components/market/market-breadth";
 import { stockColumns } from "@/components/market/stock-columns";
 import { useStocks, useStockIndustries, useMarketOverview } from "@/lib/hooks";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowUpDown } from "lucide-react";
+
+const SORT_OPTIONS = [
+  { label: "代码", value: "ts_code" },
+  { label: "涨跌幅", value: "pct_chg" },
+  { label: "成交额", value: "amount" },
+  { label: "总市值", value: "total_mv" },
+  { label: "换手率", value: "turnover_rate" },
+] as const;
 
 export default function MarketPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [industry, setIndustry] = useState("");
+  const [sortBy, setSortBy] = useState<string | undefined>(undefined);
+  const [sortOrder, setSortOrder] = useState<string>("desc");
   const pageSize = 20;
 
   const debouncedSearch = search.trim() || undefined;
@@ -23,6 +36,9 @@ export default function MarketPage() {
     pageSize,
     debouncedSearch,
     debouncedIndustry,
+    undefined,
+    sortBy,
+    sortOrder,
   );
   const { data: industries } = useStockIndustries();
 
@@ -30,8 +46,17 @@ export default function MarketPage() {
   const total = stocksData?.total ?? 0;
   const pageCount = Math.ceil(total / pageSize);
 
-  // Show top 3 indices
   const topIndices = (overview?.data ?? []).slice(0, 6);
+
+  function handleSort(value: string) {
+    if (sortBy === value) {
+      setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(value);
+      setSortOrder("desc");
+    }
+    setPage(1);
+  }
 
   return (
     <div className="space-y-6">
@@ -54,8 +79,13 @@ export default function MarketPage() {
         )
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      {/* Market breadth */}
+      {!overviewLoading && topIndices.length > 0 && (
+        <MarketBreadth indices={topIndices} />
+      )}
+
+      {/* Filters + Sort */}
+      <div className="flex flex-wrap gap-3 items-center">
         <Input
           placeholder="搜索代码/名称..."
           value={search}
@@ -80,6 +110,23 @@ export default function MarketPage() {
             </option>
           ))}
         </select>
+
+        <div className="flex gap-1 ml-auto">
+          {SORT_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={sortBy === opt.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => handleSort(opt.value)}
+              className="text-xs"
+            >
+              {opt.label}
+              {sortBy === opt.value && (
+                <ArrowUpDown className="ml-1 h-3 w-3" />
+              )}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {/* Stock table */}

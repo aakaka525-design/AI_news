@@ -20,7 +20,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, asc, case
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import (
@@ -55,6 +55,11 @@ class StockRepository:
     # Stock list & profile
     # ----------------------------------------------------------
 
+    # Allowed sort columns for stock list
+    _STOCK_SORT_COLUMNS = {
+        "ts_code", "pct_chg", "amount", "total_mv", "turnover_rate",
+    }
+
     def get_stock_list(
         self,
         search: Optional[str] = None,
@@ -62,10 +67,39 @@ class StockRepository:
         market: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        sort_by: Optional[str] = None,
+        sort_order: str = "asc",
     ) -> dict[str, Any]:
-        """Paginated stock list with optional search/filter."""
+        """Paginated stock list with optional search/filter and trading data."""
         with self.Session() as session:
-            q = session.query(StockBasic).filter(StockBasic.list_status == "L")
+            # Find the latest trade_date in StockDaily for the JOIN
+            latest_date_sub = session.query(func.max(StockDaily.trade_date)).scalar()
+            latest_basic_sub = session.query(func.max(TsDailyBasic.trade_date)).scalar()
+
+            q = (
+                session.query(
+                    StockBasic,
+                    StockDaily.close,
+                    StockDaily.pct_chg,
+                    StockDaily.amount,
+                    TsDailyBasic.turnover_rate,
+                    TsDailyBasic.total_mv,
+                )
+                .outerjoin(
+                    StockDaily,
+                    (StockBasic.ts_code == StockDaily.ts_code)
+                    & (StockDaily.trade_date == latest_date_sub),
+                )
+                .outerjoin(
+                    TsDailyBasic,
+                    (StockBasic.ts_code == TsDailyBasic.ts_code)
+                    & (TsDailyBasic.trade_date == latest_basic_sub),
+                )
+                .filter(
+                    (StockBasic.list_status == "L")
+                    | (StockBasic.list_status.is_(None))
+                )
+            )
 
             if search:
                 pattern = f"%{search}%"
@@ -80,7 +114,27 @@ class StockRepository:
                 q = q.filter(StockBasic.market == market)
 
             total = q.count()
-            rows = q.order_by(StockBasic.ts_code).offset((page - 1) * page_size).limit(page_size).all()
+
+            # Determine sort column
+            # Use case() for nulls-last ordering (SQLite compatible)
+            sort_fn = desc if sort_order == "desc" else asc
+            if sort_by in self._STOCK_SORT_COLUMNS and sort_by != "ts_code":
+                col_map = {
+                    "pct_chg": StockDaily.pct_chg,
+                    "amount": StockDaily.amount,
+                    "total_mv": TsDailyBasic.total_mv,
+                    "turnover_rate": TsDailyBasic.turnover_rate,
+                }
+                col = col_map[sort_by]
+                # nulls last: sort NULL rows to end regardless of direction
+                q = q.order_by(
+                    case((col.is_(None), 1), else_=0),
+                    sort_fn(col),
+                )
+            else:
+                q = q.order_by(sort_fn(StockBasic.ts_code))
+
+            rows = q.offset((page - 1) * page_size).limit(page_size).all()
 
             return {
                 "total": total,
@@ -88,13 +142,18 @@ class StockRepository:
                 "page_size": page_size,
                 "data": [
                     {
-                        "ts_code": r.ts_code,
-                        "symbol": r.symbol,
-                        "name": r.name,
-                        "industry": r.industry,
-                        "market": r.market,
-                        "area": r.area,
-                        "list_date": r.list_date,
+                        "ts_code": r.StockBasic.ts_code,
+                        "symbol": r.StockBasic.symbol,
+                        "name": r.StockBasic.name,
+                        "industry": r.StockBasic.industry,
+                        "market": r.StockBasic.market,
+                        "area": r.StockBasic.area,
+                        "list_date": r.StockBasic.list_date,
+                        "close": _num(r.close),
+                        "pct_chg": _num(r.pct_chg),
+                        "amount": _num(r.amount),
+                        "turnover_rate": _num(r.turnover_rate),
+                        "total_mv": _num(r.total_mv),
                     }
                     for r in rows
                 ],
@@ -134,8 +193,13 @@ class StockRepository:
                     "pe_ttm": _num(val.pe_ttm),
                     "pb": _num(val.pb),
                     "ps": _num(val.ps),
+                    "ps_ttm": _num(val.ps_ttm),
+                    "dv_ratio": _num(val.dv_ratio),
+                    "dv_ttm": _num(val.dv_ttm),
                     "total_mv": _num(val.total_mv),
                     "circ_mv": _num(val.circ_mv),
+                    "total_share": _num(val.total_share),
+                    "float_share": _num(val.float_share),
                     "turnover_rate": _num(val.turnover_rate),
                     "volume_ratio": _num(val.volume_ratio),
                 }
@@ -144,12 +208,39 @@ class StockRepository:
 
             return profile
 
+    def get_valuation_history(
+        self, ts_code: str, limit: int = 250
+    ) -> list[dict[str, Any]]:
+        """Historical valuation metrics (PE/PB/PS/DV/MV)."""
+        with self.Session() as session:
+            rows = (
+                session.query(TsDailyBasic)
+                .filter(TsDailyBasic.ts_code == ts_code)
+                .order_by(desc(TsDailyBasic.trade_date))
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "trade_date": r.trade_date,
+                    "pe_ttm": _num(r.pe_ttm),
+                    "pb": _num(r.pb),
+                    "ps_ttm": _num(r.ps_ttm),
+                    "dv_ttm": _num(r.dv_ttm),
+                    "total_mv": _num(r.total_mv),
+                }
+                for r in rows
+            ]
+
     def get_industries(self) -> list[str]:
         """Distinct industry list for filter dropdown."""
         with self.Session() as session:
             rows = (
                 session.query(StockBasic.industry)
-                .filter(StockBasic.industry.isnot(None), StockBasic.list_status == "L")
+                .filter(
+                    StockBasic.industry.isnot(None),
+                    (StockBasic.list_status == "L") | (StockBasic.list_status.is_(None)),
+                )
                 .distinct()
                 .order_by(StockBasic.industry)
                 .all()

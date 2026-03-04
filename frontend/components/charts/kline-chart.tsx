@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
 import {
   createChart,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   type IChartApi,
   type CandlestickData,
   type HistogramData,
+  type LineData,
   type Time,
 } from "lightweight-charts";
 
@@ -20,20 +23,59 @@ interface KlineItem {
   vol?: number;
 }
 
+export type TimeRange = "1M" | "3M" | "6M" | "1Y" | "ALL";
+
 interface KlineChartProps {
   data: KlineItem[];
   height?: number;
+  showMA?: boolean;
+  activeRange?: TimeRange;
+  onRangeChange?: (range: TimeRange) => void;
 }
 
+const RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
+  { label: "1M", value: "1M" },
+  { label: "3M", value: "3M" },
+  { label: "6M", value: "6M" },
+  { label: "1Y", value: "1Y" },
+  { label: "ALL", value: "ALL" },
+];
+
+const MA_COLORS = {
+  5: "#06b6d4",
+  10: "#f59e0b",
+  20: "#a855f7",
+  60: "#22c55e",
+} as const;
+
 function toTime(dateStr: string): Time {
-  // YYYYMMDD → YYYY-MM-DD
   const y = dateStr.slice(0, 4);
   const m = dateStr.slice(4, 6);
   const d = dateStr.slice(6, 8);
   return `${y}-${m}-${d}` as Time;
 }
 
-export function KlineChart({ data, height = 400 }: KlineChartProps) {
+function calcMA(closes: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) {
+      result.push(null);
+    } else {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+      result.push(sum / period);
+    }
+  }
+  return result;
+}
+
+export function KlineChart({
+  data,
+  height = 400,
+  showMA = true,
+  activeRange,
+  onRangeChange,
+}: KlineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -78,6 +120,32 @@ export function KlineChart({ data, height = 400 }: KlineChartProps) {
     }));
     candleSeries.setData(candleData);
 
+    // MA overlays
+    if (showMA) {
+      const closes = sorted.map((d) => d.close);
+      const periods = [5, 10, 20, 60] as const;
+      for (const period of periods) {
+        const maValues = calcMA(closes, period);
+        const maData: LineData[] = [];
+        for (let i = 0; i < sorted.length; i++) {
+          if (maValues[i] !== null) {
+            maData.push({
+              time: toTime(sorted[i].trade_date),
+              value: maValues[i]!,
+            });
+          }
+        }
+        const lineSeries = chart.addSeries(LineSeries, {
+          color: MA_COLORS[period],
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        lineSeries.setData(maData);
+      }
+    }
+
     // Volume histogram (bottom 20%)
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
@@ -109,7 +177,7 @@ export function KlineChart({ data, height = 400 }: KlineChartProps) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [data, height]);
+  }, [data, height, showMA]);
 
   if (data.length === 0) {
     return (
@@ -119,5 +187,30 @@ export function KlineChart({ data, height = 400 }: KlineChartProps) {
     );
   }
 
-  return <div ref={containerRef} />;
+  return (
+    <div>
+      {onRangeChange && (
+        <div className="flex gap-1 mb-3">
+          {RANGE_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={activeRange === opt.value ? "default" : "outline"}
+              size="sm"
+              className="text-xs h-7 px-2"
+              onClick={() => onRangeChange(opt.value)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+          <div className="flex gap-2 ml-auto text-xs items-center text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[5] }} />MA5</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[10] }} />MA10</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[20] }} />MA20</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[60] }} />MA60</span>
+          </div>
+        </div>
+      )}
+      <div ref={containerRef} />
+    </div>
+  );
 }

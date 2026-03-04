@@ -33,4 +33,4 @@ jobs:
         run: pytest --cov=src --cov=api --cov-report=term-missing -v
         env:
           TUSHARE_TOKEN: "fake_token_for_ci"
-          OPENAI_API_KEY: "fake_key_for_ci"
+          GEMINI_API_KEY: "fake_key_for_ci"

@@ -105,7 +105,7 @@ class TestGetNewsList:
     def test_dict_keys(self, repo):
         repo.insert_news("T", "C")
         item = repo.get_news_list()[0]
-        assert set(item.keys()) == {"id", "title", "content", "cleaned_data", "received_at"}
+        assert set(item.keys()) == {"id", "title", "content", "cleaned_data", "source", "received_at"}
 
 
 class TestGetNewsCount:

@@ -25,6 +25,7 @@ class PolymarketMarket(PolymarketBase):
 
     condition_id = Column(String(256), primary_key=True)
     question = Column(Text, nullable=False)
+    question_zh = Column(Text, nullable=True)       # Chinese translation
     description = Column(Text, nullable=True)
     tags = Column(Text, nullable=True)          # JSON string: ["crypto", "politics"]
     outcomes = Column(Text, nullable=True)       # JSON string: ["Yes", "No"]

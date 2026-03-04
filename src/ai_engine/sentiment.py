@@ -14,7 +14,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from openai import AsyncOpenAI
+from google import genai
+from google.genai.types import GenerateContentConfig
+
+from src.ai_engine.gemini_client import get_gemini_client, get_default_model
 
 # ============================================================
 # 配置
@@ -121,11 +124,10 @@ class SentimentAnalyzer:
     
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://api.deepseek.com/v1",
-        model: str = "deepseek-chat"
+        client: genai.Client,
+        model: str = "gemini-2.0-flash"
     ):
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.client = client
         self.model = model
     
     async def analyze_batch(self, news_items: list[dict]) -> list[dict]:
@@ -137,17 +139,16 @@ class SentimentAnalyzer:
         user_content = self._build_prompt(news_items)
         
         try:
-            response = await self.client.chat.completions.create(
+            response = await self.client.aio.models.generate_content(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SENTIMENT_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                temperature=0.3,
-                max_tokens=2000
+                contents=f"{SENTIMENT_PROMPT}\n\n{user_content}",
+                config=GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=2000,
+                ),
             )
-            
-            result_text = response.choices[0].message.content.strip()
+
+            result_text = (response.text or "").strip()
             
             # 处理可能的 Markdown 包裹
             if result_text.startswith("```"):
@@ -182,15 +183,14 @@ class SentimentAnalyzer:
 
 def create_sentiment_analyzer() -> Optional[SentimentAnalyzer]:
     """从环境变量创建分析器"""
-    api_key = os.getenv("AI_API_KEY")
-    if not api_key:
-        print("⚠️ AI_API_KEY 未配置")
+    client = get_gemini_client()
+    if not client:
+        print("⚠️ GEMINI_API_KEY 未配置")
         return None
-    
-    base_url = os.getenv("AI_BASE_URL", "https://api.deepseek.com/v1")
-    model = os.getenv("AI_MODEL", "deepseek-chat")
-    
-    return SentimentAnalyzer(api_key=api_key, base_url=base_url, model=model)
+
+    model = get_default_model()
+
+    return SentimentAnalyzer(client=client, model=model)
 
 
 # ============================================================

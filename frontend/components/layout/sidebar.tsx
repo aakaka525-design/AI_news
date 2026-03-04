@@ -2,29 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Newspaper,
-  AlertTriangle,
-  Settings,
-  TrendingUp,
-  BarChart3,
-  Wallet,
-  Trophy,
-  Grid3X3,
-} from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/market", label: "市场行情", icon: BarChart3 },
-  { href: "/flow", label: "资金流向", icon: Wallet },
-  { href: "/dragon", label: "龙虎榜", icon: Trophy },
-  { href: "/sector", label: "板块行情", icon: Grid3X3 },
-  { href: "/news", label: "新闻中心", icon: Newspaper },
-  { href: "/strategy/anomaly", label: "异常信号", icon: AlertTriangle },
-  { href: "/settings", label: "系统设置", icon: Settings },
-];
+import { navGroups } from "@/lib/nav-config";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -35,29 +15,39 @@ export function Sidebar() {
         <TrendingUp className="mr-2 h-5 w-5" />
         AI News
       </div>
-      <nav className="flex-1 space-y-1 p-2">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto p-2">
+        {navGroups.map((group, gi) => (
+          <div key={group.label}>
+            {gi > 0 && <div className="my-2 border-t" />}
+            <p className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">
+              {group.label}
+            </p>
+            <div className="space-y-1">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
     </aside>
   );

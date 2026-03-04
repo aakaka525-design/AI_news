@@ -1,25 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Menu, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/news", label: "新闻中心" },
-  { href: "/strategy/anomaly", label: "异常信号" },
-  { href: "/settings", label: "系统设置" },
-];
+import { navGroups } from "@/lib/nav-config";
+import { StockSearch } from "@/components/layout/stock-search";
 
 export function Header() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
 
   return (
     <header className="flex h-14 items-center border-b px-4 md:px-6">
-      <Sheet>
+      <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="md:hidden">
             <Menu className="h-5 w-5" />
@@ -30,31 +27,48 @@ export function Header() {
             <TrendingUp className="mr-2 h-5 w-5" />
             AI News
           </div>
-          <nav className="space-y-1 p-2">
-            {navItems.map((item) => {
-              const active =
-                item.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "block rounded-md px-3 py-2 text-sm",
-                    active
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav className="overflow-y-auto p-2">
+            {navGroups.map((group, gi) => (
+              <div key={group.label}>
+                {gi > 0 && <div className="my-2 border-t" />}
+                <p className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active =
+                      item.href === "/"
+                        ? pathname === "/"
+                        : pathname.startsWith(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                          active
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </SheetContent>
       </Sheet>
-      <div className="flex-1" />
+      <div className="flex-1 flex justify-end">
+        <div className="hidden md:block">
+          <StockSearch />
+        </div>
+      </div>
     </header>
   );
 }

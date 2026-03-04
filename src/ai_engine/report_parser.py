@@ -15,10 +15,7 @@ from typing import Optional
 
 from src.database.connection import get_connection
 
-try:
-    from openai import AsyncOpenAI
-except ImportError:
-    AsyncOpenAI = None  # type: ignore[assignment,misc]
+from src.ai_engine.gemini_client import get_gemini_client, get_default_model
 
 
 def log(msg: str):
@@ -239,20 +236,16 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
     使用 LLM 分析研报
 
     Requires:
-        DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量
+        GEMINI_API_KEY 环境变量
     """
-    if AsyncOpenAI is None:
-        log("   ⚠️ 需要安装 openai: pip install openai")
+    from google.genai.types import GenerateContentConfig
+
+    client = get_gemini_client()
+    if not client:
+        log("   ⚠️ GEMINI_API_KEY 未配置")
         return None
 
-    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        log("   ⚠️ 未设置 API Key")
-        return None
-
-    base_url = "https://api.deepseek.com" if os.getenv("DEEPSEEK_API_KEY") else None
-
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    model = get_default_model()
 
     prompt = REPORT_ANALYSIS_PROMPT.format(
         title=report.get("report_title", ""),
@@ -261,14 +254,16 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
     )
 
     try:
-        response = await client.chat.completions.create(
-            model="deepseek-chat" if base_url else "gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=500,
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(
+                temperature=0.3,
+                max_output_tokens=500,
+            ),
         )
 
-        content = response.choices[0].message.content.strip()
+        content = (response.text or "").strip()
         # 提取 JSON
         if content.startswith("{"):
             return json.loads(content)
