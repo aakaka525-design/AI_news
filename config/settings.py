@@ -45,9 +45,13 @@ DEFAULT_WORKERS = 50
 MAX_WORKERS = 100
 
 # AI 配置
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Telegram 配置
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Polymarket 配置
+POLYMARKET_ENABLED = os.getenv("POLYMARKET_ENABLED", "true").lower() == "true"
+POLYMARKET_FETCH_INTERVAL = int(os.getenv("POLYMARKET_FETCH_INTERVAL", "5"))
+POLYMARKET_VOLATILITY_THRESHOLD = float(os.getenv("POLYMARKET_VOLATILITY_THRESHOLD", "0.10"))

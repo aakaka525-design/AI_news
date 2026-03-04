@@ -34,10 +34,11 @@ from src.ai_engine.llm_analyzer import AIAnalyzer, create_analyzer_from_env
 from api.scheduler import scheduler_manager, register_default_tasks
 
 # 导入数据库引擎和仓储层
-from src.database.engine import create_engine_from_url, get_session_factory
 from src.database.repositories.news import NewsRepository
 from src.database.repositories.stock import StockRepository
-from config.settings import NEWS_DATABASE_URL, DATABASE_URL
+from src.database.repositories.polymarket import PolymarketRepository
+from src.data_ingestion.polymarket.models import PolymarketBase
+from api.db import news_engine, news_session, stock_engine, stock_session
 
 # ============================================================
 # 配置
@@ -45,14 +46,15 @@ from config.settings import NEWS_DATABASE_URL, DATABASE_URL
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-# 数据库引擎和仓储层（模块级别单例）
-_engine = create_engine_from_url(NEWS_DATABASE_URL)
-_Session = get_session_factory(_engine)
+# 数据库引擎和仓储层（使用共享单例）
+_engine = news_engine
+_Session = news_session
 _repo = NewsRepository(_Session)
+_polymarket_repo = PolymarketRepository(_Session)
 
 # Stocks database (read-only)
-_stock_engine = create_engine_from_url(DATABASE_URL)
-_stock_Session = get_session_factory(_stock_engine)
+_stock_engine = stock_engine
+_stock_Session = stock_session
 _stock_repo = StockRepository(_stock_Session)
 
 app = FastAPI(title="AI News Dashboard", version="2.0.0")
@@ -125,8 +127,8 @@ class NewsRecord(BaseModel):
     content: str
     content_html: str
     received_at: str
-    # 新增：清洗后的结构化数据
     cleaned_data: Optional[dict] = None
+    source: Optional[str] = None
 
 
 class CleanRequest(BaseModel):
@@ -177,6 +179,7 @@ def get_recent_news(limit: int = 50) -> list[NewsRecord]:
             content_html=render_markdown_safely(item["content"]),
             received_at=item["received_at"] or "",
             cleaned_data=item["cleaned_data"],
+            source=item.get("source"),
         ))
     return records
 
@@ -258,6 +261,7 @@ async def startup():
         raise RuntimeError("DASHBOARD_API_KEY is required in the current environment")
 
     _repo.create_tables(_engine)
+    PolymarketBase.metadata.create_all(_engine)
     print(f"📦 数据库初始化完成: {NEWS_DATABASE_URL}")
     print(f"🧹 数据清洗模块已加载")
     
@@ -895,10 +899,13 @@ async def get_stocks(
     market: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_by: Optional[str] = Query(None),
+    sort_order: str = Query("asc"),
 ):
-    """股票列表（搜索/行业/市场/分页）"""
+    """股票列表（搜索/行业/市场/分页/排序）"""
     return await run_in_threadpool(
-        _stock_repo.get_stock_list, search, industry, market, page, page_size
+        _stock_repo.get_stock_list, search, industry, market, page, page_size,
+        sort_by, sort_order,
     )
 
 
@@ -916,6 +923,18 @@ async def get_stock_profile(ts_code: str):
     if not profile:
         raise HTTPException(status_code=404, detail=f"Stock {ts_code} not found")
     return profile
+
+
+@app.get("/api/stocks/{ts_code}/valuation-history")
+async def get_valuation_history(
+    ts_code: str,
+    limit: int = Query(250, ge=1, le=1000),
+):
+    """个股估值历史"""
+    data = await run_in_threadpool(
+        _stock_repo.get_valuation_history, ts_code, limit
+    )
+    return {"data": data}
 
 
 @app.get("/api/stocks/{ts_code}/daily")
@@ -977,3 +996,48 @@ async def get_sectors(
         _stock_repo.get_sectors, block_type, trade_date, limit
     )
     return {"data": data}
+
+
+# ============================================================
+# Polymarket 预测市场 API
+# ============================================================
+
+
+@app.get("/api/polymarket/markets")
+async def get_polymarket_markets(limit: int = Query(50, ge=1, le=200)):
+    """获取活跃预测市场列表"""
+    markets = await run_in_threadpool(_polymarket_repo.get_active_markets, limit)
+    return {"total": len(markets), "data": markets}
+
+
+@app.get("/api/polymarket/markets/{condition_id}")
+async def get_polymarket_market_detail(condition_id: str):
+    """获取单个预测市场详情"""
+    detail = await run_in_threadpool(_polymarket_repo.get_market_detail, condition_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Market {condition_id} not found")
+    return detail
+
+
+@app.get("/api/polymarket/markets/{condition_id}/history")
+async def get_polymarket_history(
+    condition_id: str,
+    limit: int = Query(100, ge=1, le=500),
+):
+    """获取预测市场价格历史"""
+    history = await run_in_threadpool(
+        _polymarket_repo.get_price_history, condition_id, limit
+    )
+    return {"total": len(history), "data": history}
+
+
+@app.post("/api/polymarket/translate")
+async def trigger_polymarket_translation(
+    limit: int = Query(200, ge=1, le=1000),
+    _: None = Depends(verify_api_key),
+):
+    """手动触发预测市场问题翻译"""
+    from src.data_ingestion.polymarket.translator import MarketTranslator
+    translator = MarketTranslator()
+    count = await run_in_threadpool(translator.translate_markets, _Session, limit)
+    return {"translated": count}

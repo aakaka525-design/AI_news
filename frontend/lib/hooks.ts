@@ -25,10 +25,14 @@ import {
   fetchStockIndustries,
   fetchStockProfile,
   fetchStockDaily,
+  fetchValuationHistory,
   fetchMarketOverview,
   fetchMoneyFlow,
   fetchDragonTiger,
   fetchSectors,
+  fetchPolymarketMarkets,
+  fetchPolymarketMarketDetail,
+  fetchPolymarketHistory,
 } from "./api";
 
 export const useHealth = () =>
@@ -125,10 +129,12 @@ export const useStocks = (
   search?: string,
   industry?: string,
   market?: string,
+  sortBy?: string,
+  sortOrder?: string,
 ) =>
   useQuery({
-    queryKey: ["stocks", page, pageSize, search, industry, market],
-    queryFn: () => fetchStocks(page, pageSize, search, industry, market),
+    queryKey: ["stocks", page, pageSize, search, industry, market, sortBy, sortOrder],
+    queryFn: () => fetchStocks(page, pageSize, search, industry, market, sortBy, sortOrder),
     placeholderData: (prev) => prev,
   });
 
@@ -142,11 +148,23 @@ export const useStockProfile = (tsCode: string) =>
     enabled: !!tsCode,
   });
 
-export const useStockDaily = (tsCode: string, limit = 250) =>
+export const useStockDaily = (
+  tsCode: string,
+  limit = 250,
+  startDate?: string,
+  endDate?: string,
+) =>
   useQuery({
-    queryKey: ["stock-daily", tsCode, limit],
-    queryFn: () => fetchStockDaily(tsCode, undefined, undefined, limit),
+    queryKey: ["stock-daily", tsCode, limit, startDate, endDate],
+    queryFn: () => fetchStockDaily(tsCode, startDate, endDate, limit),
     enabled: !!tsCode,
+  });
+
+export const useValuationHistory = (tsCode: string | null, limit = 250) =>
+  useQuery({
+    queryKey: ["valuation-history", tsCode, limit],
+    queryFn: () => fetchValuationHistory(tsCode!, limit),
+    enabled: tsCode !== null,
   });
 
 export const useMarketOverview = (tradeDate?: string) =>
@@ -171,4 +189,30 @@ export const useSectors = (blockType?: string, tradeDate?: string, limit = 50) =
   useQuery({
     queryKey: ["sectors", blockType, tradeDate, limit],
     queryFn: () => fetchSectors(blockType, tradeDate, limit),
+  });
+
+// ===== Polymarket =====
+
+export const usePolymarketMarkets = (limit = 50) =>
+  useQuery({
+    queryKey: ["polymarket-markets", limit],
+    queryFn: () => fetchPolymarketMarkets(limit),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+export const usePolymarketMarketDetail = (conditionId: string | null) =>
+  useQuery({
+    queryKey: ["polymarket-detail", conditionId],
+    queryFn: () => fetchPolymarketMarketDetail(conditionId!),
+    enabled: conditionId !== null,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const usePolymarketHistory = (conditionId: string | null, limit = 100) =>
+  useQuery({
+    queryKey: ["polymarket-history", conditionId, limit],
+    queryFn: () => fetchPolymarketHistory(conditionId!, limit),
+    enabled: conditionId !== null,
+    staleTime: 5 * 60 * 1000,
   });

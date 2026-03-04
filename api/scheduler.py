@@ -71,11 +71,16 @@ TASK_CONFIGS = {
     "polymarket_fetch": {
         "name": "Polymarket 预测市场",
         "trigger": "interval",
-        "minutes": int(os.getenv("POLYMARKET_FETCH_INTERVAL", "5")),
-        "enabled": os.getenv("POLYMARKET_ENABLED", "true").lower() == "true",
+        "minutes": None,  # Filled at import time from settings
+        "enabled": None,  # Filled at import time from settings
         "description": "从 Polymarket 拉取预测市场数据，检测概率波动"
     },
 }
+
+# Fill Polymarket config from centralized settings
+from config.settings import POLYMARKET_ENABLED, POLYMARKET_FETCH_INTERVAL
+TASK_CONFIGS["polymarket_fetch"]["minutes"] = POLYMARKET_FETCH_INTERVAL
+TASK_CONFIGS["polymarket_fetch"]["enabled"] = POLYMARKET_ENABLED
 
 
 # ============================================================
@@ -206,13 +211,18 @@ class SchedulerManager:
                 continue
             
             trigger = self._create_trigger(config)
+            # For interval triggers, fire immediately on startup
+            kwargs: dict = {}
+            if config.get("trigger") == "interval":
+                kwargs["next_run_time"] = datetime.now()
             self.scheduler.add_job(
                 self._execute_task,
                 trigger=trigger,
                 id=task_id,
                 args=[task_id],
                 name=config.get("name", task_id),
-                replace_existing=True
+                replace_existing=True,
+                **kwargs,
             )
             logger.info(f"📅 添加定时任务: {config.get('name', task_id)}")
         
@@ -349,17 +359,15 @@ def register_default_tasks():
     scheduler_manager.register_task("macro_data", macro_task)
     
     # 注册 Polymarket 预测市场任务
-    if os.getenv("POLYMARKET_ENABLED", "true").lower() == "true":
+    if POLYMARKET_ENABLED:
         from src.data_ingestion.polymarket.fetcher import PolymarketFetcher
         from src.data_ingestion.polymarket.models import PolymarketBase
-        from config.settings import NEWS_DATABASE_URL
-        from src.database.engine import create_engine_from_url, get_session_factory
+        from api.db import news_engine, news_session
         from src.database.repositories.news import NewsRepository
 
-        pm_engine = create_engine_from_url(NEWS_DATABASE_URL)
-        pm_Session = get_session_factory(pm_engine)
+        pm_Session = news_session
         pm_repo = NewsRepository(pm_Session)
-        PolymarketBase.metadata.create_all(pm_engine)
+        PolymarketBase.metadata.create_all(news_engine)
 
         pm_fetcher = PolymarketFetcher(pm_Session, pm_repo)
 

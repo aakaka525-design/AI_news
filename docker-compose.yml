@@ -18,8 +18,7 @@ services:
       - IMMEDIATE_RUN=${IMMEDIATE_RUN:-true}
       # AI 分析配置
       - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
-      - AI_API_KEY=${AI_API_KEY:-}
-      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       # Generic Webhook 推送到 Dashboard
       - GENERIC_WEBHOOK_URL=http://dashboard:8000/webhook/receive
       - "GENERIC_WEBHOOK_TEMPLATE={\"title\": \"{title}\", \"content\": \"{content}\"}"
@@ -43,12 +42,16 @@ services:
       - NEWS_DATABASE_URL=postgresql://ainews:ainews_dev@postgres:5432/ainews
       - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
       - AI_API_KEY=${AI_API_KEY:-}
-      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
-      - AI_MODEL=${AI_MODEL:-deepseek-chat}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+      - AI_BASE_URL=${AI_BASE_URL:-}
+      - AI_MODEL=${AI_MODEL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
       - API_KEY_REQUIRED=${API_KEY_REQUIRED:-false}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - POLYMARKET_ENABLED=${POLYMARKET_ENABLED:-true}
+      - POLYMARKET_FETCH_INTERVAL=${POLYMARKET_FETCH_INTERVAL:-5}
+      - POLYMARKET_VOLATILITY_THRESHOLD=${POLYMARKET_VOLATILITY_THRESHOLD:-0.10}
     depends_on:
       postgres:
         condition: service_healthy

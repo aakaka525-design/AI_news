@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 CLOB_HOST = "https://clob.polymarket.com"
 # Cursors that indicate no more pages
 END_CURSORS = {"DONE", "LTE="}  # "LTE=" is base64 for "-1"
+MAX_PAGES = 50
 
 
 class PolymarketClient:
@@ -27,19 +28,26 @@ class PolymarketClient:
         """
         all_markets: list[dict[str, Any]] = []
         cursor = "MA=="
+        page = 0
 
-        while True:
-            resp = self._sdk.get_sampling_markets(cursor)
-            data = resp.get("data", [])
-            if not data:
-                break
+        try:
+            while page < MAX_PAGES:
+                page += 1
+                resp = self._sdk.get_sampling_markets(cursor)
+                data = resp.get("data", [])
+                if not data:
+                    break
 
-            for raw in data:
-                all_markets.append(self._normalize(raw))
+                for raw in data:
+                    all_markets.append(self._normalize(raw))
 
-            cursor = resp.get("next_cursor", "DONE")
-            if cursor in END_CURSORS or not cursor:
-                break
+                cursor = resp.get("next_cursor", "DONE")
+                if cursor in END_CURSORS or not cursor:
+                    break
+        except Exception as e:
+            logger.error(
+                f"Polymarket SDK error (fetched {len(all_markets)} markets so far): {e}"
+            )
 
         logger.info(f"Polymarket: fetched {len(all_markets)} active markets")
         return all_markets
@@ -54,7 +62,7 @@ class PolymarketClient:
             "description": raw.get("description", ""),
             "tags": raw.get("tags", []),
             "outcomes": [t.get("outcome", "") for t in tokens],
-            "prices": [t.get("price", 0) for t in tokens],
+            "prices": [float(t.get("price", 0) or 0) for t in tokens],
             "clob_token_ids": [t.get("token_id", "") for t in tokens],
             "image": raw.get("image", ""),
             "end_date": raw.get("end_date_iso", ""),
