@@ -262,7 +262,8 @@ async def startup():
 
     _repo.create_tables(_engine)
     PolymarketBase.metadata.create_all(_engine)
-    print(f"📦 数据库初始化完成: {NEWS_DATABASE_URL}")
+    from config.settings import NEWS_DATABASE_URL as _news_db_url
+    print(f"📦 数据库初始化完成: {_news_db_url}")
     print(f"🧹 数据清洗模块已加载")
     
     # 检查 AI 分析是否可用
@@ -520,8 +521,8 @@ async def analyze_rss_sentiment(
     """对 RSS 新闻进行情感分析"""
     try:
         from src.ai_engine.sentiment import analyze_pending_news, get_sentiment_stats
-        result = await analyze_pending_news(limit=limit)
-        stats = get_sentiment_stats()
+        result = await analyze_pending_news(_repo, limit=limit)
+        stats = get_sentiment_stats(_repo)
         return {"analysis": result, "stats": stats}
     except Exception as e:
         _raise_internal_error("rss analysis failed", e)
@@ -532,7 +533,7 @@ async def get_rss_sentiment_stats():
     """获取情感分析统计"""
     try:
         from src.ai_engine.sentiment import get_sentiment_stats
-        return await run_in_threadpool(get_sentiment_stats)
+        return await run_in_threadpool(get_sentiment_stats, _repo)
     except Exception as e:
         _raise_internal_error("rss sentiment stats failed", e)
 
@@ -1029,6 +1030,17 @@ async def get_polymarket_history(
         _polymarket_repo.get_price_history, condition_id, limit
     )
     return {"total": len(history), "data": history}
+
+
+# ============================================================
+# AI 用量统计 API
+# ============================================================
+
+@app.get("/api/ai/usage")
+async def get_ai_usage():
+    """获取 AI API 用量统计"""
+    from src.ai_engine.gemini_client import get_usage_stats
+    return get_usage_stats()
 
 
 @app.post("/api/polymarket/translate")

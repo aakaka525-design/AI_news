@@ -326,8 +326,15 @@ def register_default_tasks():
     
     # 注册 AI 分析任务
     from src.ai_engine.llm_analyzer import create_analyzer_from_env
+    from src.ai_engine.sentiment import analyze_pending_news
     from rss_fetcher import get_recent_rss
+    from api.db import news_session as _ai_session
+    from src.database.repositories.news import NewsRepository as _AINewsRepo
+
+    _ai_repo = _AINewsRepo(_ai_session)
+
     async def ai_task():
+        # 1. 热点分析
         analyzer = create_analyzer_from_env()
         if not analyzer:
             raise RuntimeError("AI 分析器未启用")
@@ -339,7 +346,25 @@ def register_default_tasks():
             {"id": r.get("id"), "title": r.get("title", ""), "content": r.get("summary", "")}
             for r in items
         ]
-        await analyzer.analyze_opportunities(payload)
+        analysis = await analyzer.analyze_opportunities(payload)
+
+        # 保存热点分析结果
+        if "error" not in analysis:
+            from datetime import datetime as _dt
+            _ai_repo.insert_analysis(
+                date=_dt.now().strftime("%Y-%m-%d"),
+                input_count=len(payload),
+                analysis_summary=analysis.get("analysis_summary", ""),
+                opportunities=analysis.get("opportunities", []),
+            )
+            logger.info(f"AI 热点分析完成，已保存 {len(analysis.get('opportunities', []))} 个机会")
+        else:
+            logger.warning(f"AI 热点分析返回错误: {analysis.get('error')}")
+
+        # 2. 情感分析
+        sentiment_result = await analyze_pending_news(_ai_repo)
+        logger.info(f"情感分析: {sentiment_result}")
+
     scheduler_manager.register_task("ai_analysis", ai_task)
     
     # 注册金融数据任务（同步函数）

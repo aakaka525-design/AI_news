@@ -8,13 +8,21 @@ AI 热点分析模块 - Strategic Opportunity Advisor
 """
 
 import json
+import logging
 import os
 import re
 from typing import Optional
 from google import genai
 from google.genai.types import GenerateContentConfig
 
-from src.ai_engine.gemini_client import get_gemini_client, get_default_model
+from src.ai_engine.gemini_client import (
+    get_gemini_client,
+    get_default_model,
+    call_with_retry,
+    parse_json_response,
+)
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # 配置
@@ -108,7 +116,7 @@ class AIAnalyzer:
     def __init__(
         self,
         client: genai.Client,
-        model: str = "gemini-2.0-flash"
+        model: str = "gemini-3.1-flash-lite-preview"
     ):
         self.client = client
         self.model = model
@@ -116,50 +124,37 @@ class AIAnalyzer:
     async def analyze_opportunities(self, news_items: list[dict]) -> dict:
         """
         分析热点机会
-        
+
         Args:
             news_items: 新闻数据列表，每项包含 title, content 等字段
-            
+
         Returns:
             dict: 分析结果 JSON
         """
         # 硬限制：只取前 20 条
         truncated = news_items[:MAX_ITEMS]
-        
+
         # 构建用户消息
         user_content = self._build_user_prompt(truncated)
-        
+        prompt = f"{SYSTEM_PROMPT}\n\n{user_content}"
+
         try:
-            response = await self.client.aio.models.generate_content(
+            result_text = await call_with_retry(
+                prompt,
                 model=self.model,
-                contents=f"{SYSTEM_PROMPT}\n\n{user_content}",
                 config=GenerateContentConfig(
                     temperature=0.7,
                     max_output_tokens=4000,
                 ),
             )
+            return parse_json_response(result_text)
 
-            result_text = (response.text or "").strip()
-            
-            # 尝试解析 JSON
-            # 处理可能的 Markdown 代码块包裹
-            if result_text.startswith("```"):
-                lines = result_text.split("\n")
-                result_text = "\n".join(lines[1:-1])
-            
-            return json.loads(result_text)
-            
-        except json.JSONDecodeError as e:
-            return {
-                "error": "JSON 解析失败",
-                "raw_response": result_text,
-                "detail": str(e)
-            }
+        except ValueError as e:
+            logger.error(f"JSON 解析失败: {e}")
+            return {"error": "JSON 解析失败", "detail": str(e)}
         except Exception as e:
-            return {
-                "error": "API 调用失败",
-                "detail": str(e)
-            }
+            logger.error(f"API 调用失败: {e}")
+            return {"error": "API 调用失败", "detail": str(e)}
     
     def _build_user_prompt(self, items: list[dict]) -> str:
         """构建用户消息（带消毒）"""

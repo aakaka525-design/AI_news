@@ -37,13 +37,17 @@ def run_analyze():
     """运行分析"""
     import asyncio
     from src.ai_engine.sentiment import analyze_pending_news, get_sentiment_stats
+    from api.db import news_session
+    from src.database.repositories.news import NewsRepository
+
+    repo = NewsRepository(news_session)
 
     print("📊 运行 AI 分析（RSS 情感）...")
 
     try:
-        before = get_sentiment_stats()
-        result = asyncio.run(analyze_pending_news(limit=20))
-        after = get_sentiment_stats()
+        before = get_sentiment_stats(repo)
+        result = asyncio.run(analyze_pending_news(repo, limit=20))
+        after = get_sentiment_stats(repo)
     except Exception as exc:  # noqa: BLE001
         print(f"❌ analyze 执行失败: {exc}")
         raise SystemExit(1) from exc

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useDebounce } from "@/lib/use-debounce";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +157,8 @@ function MarketCard({
 
 export default function PolymarketPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { data, isLoading, isError } = usePolymarketMarkets(200);
   const [selected, setSelected] = useState<PolymarketMarket | null>(null);
   const [search, setSearch] = useState("");
@@ -167,6 +169,17 @@ export default function PolymarketPage() {
   const history = usePolymarketHistory(selected?.condition_id ?? null);
 
   const markets = data?.data ?? [];
+
+  // 关闭 Sheet 时清除 URL 中的 market 参数，防止 useEffect 重新打开
+  const closeSheet = useCallback(() => {
+    setSelected(null);
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.has("market")) {
+      params.delete("market");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [searchParams, router, pathname]);
 
   // Auto-open market from URL search param (deep link from dashboard)
   const marketParam = searchParams.get("market");
@@ -374,7 +387,7 @@ export default function PolymarketPage() {
       {/* Detail sheet */}
       <Sheet
         open={selected !== null}
-        onOpenChange={(open) => !open && setSelected(null)}
+        onOpenChange={(open) => { if (!open) closeSheet(); }}
       >
         <SheetContent className="overflow-y-auto sm:max-w-lg">
           <SheetHeader>

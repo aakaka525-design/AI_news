@@ -115,6 +115,9 @@ class TokenBucket:
 # Tushare: 300 请求/分钟 = 5 请求/秒
 TUSHARE_BUCKET = TokenBucket(rate=5.0, capacity=10)
 
+# Gemini: free tier 15 RPM ≈ 0.25 请求/秒
+GEMINI_BUCKET = TokenBucket(rate=14 / 60, capacity=15)
+
 
 # ============================================================
 # 装饰器

@@ -45,6 +45,7 @@ AI_news/
 ├── pyproject.toml              # 项目配置
 ├── requirements.txt            # Python 依赖
 ├── docker-compose.yml          # Docker 编排
+├── .dockerignore               # 构建上下文过滤
 ├── rss_fetcher.py              # RSS 订阅抓取
 │
 ├── src/                        # 核心源代码
@@ -54,7 +55,7 @@ AI_news/
 │   │   ├── models.py           #   SQLAlchemy 模型
 │   │   ├── upsert.py           #   幂等写入
 │   │   ├── migrations/         #   迁移脚本
-│   │   └── repositories/       #   数据仓库 (news, report)
+│   │   └── repositories/       #   数据仓库 (news, report, polymarket)
 │   │
 │   ├── data_ingestion/         # 数据采集层
 │   │   ├── tushare/            #   Tinyshare 数据源
@@ -65,6 +66,12 @@ AI_news/
 │   │   │   ├── dragon_tiger.py #     龙虎榜
 │   │   │   └── valuation.py    #     估值指标
 │   │   ├── akshare/            #   AkShare 数据源 (板块/融资融券/北向)
+│   │   ├── polymarket/         #   Polymarket 预测市场
+│   │   │   ├── client.py       #     SDK 客户端 (分页)
+│   │   │   ├── fetcher.py      #     数据采集编排
+│   │   │   ├── detector.py     #     波动率检测
+│   │   │   ├── translator.py   #     中文翻译
+│   │   │   └── models.py       #     数据模型
 │   │   └── compat.py           #   新旧表兼容层
 │   │
 │   ├── analysis/               # 分析层
@@ -85,6 +92,7 @@ AI_news/
 │   │
 │   ├── ai_engine/              # AI 引擎
 │   │   ├── llm_analyzer.py     #   LLM 分析器
+│   │   ├── gemini_client.py    #   Gemini API 客户端
 │   │   ├── report_parser.py    #   研报解析
 │   │   └── sentiment.py        #   AI 情绪分析
 │   │
@@ -104,6 +112,8 @@ AI_news/
 │   ├── app/                    #   App Router 页面
 │   │   ├── page.tsx            #     仪表盘 (健康/情绪/热点/异常/研报)
 │   │   ├── news/               #     新闻中心 (推送/RSS)
+│   │   ├── market/             #     行情中心 (个股详情/K线图/估值)
+│   │   ├── polymarket/         #     预测市场
 │   │   ├── strategy/anomaly/   #     异常信号
 │   │   └── settings/           #     系统设置
 │   ├── components/             #   React 组件 (shadcn/ui)
@@ -129,6 +139,8 @@ AI_news/
 ├── config/                     # 配置 (settings.py)
 ├── data/                       # 数据存储 (gitignore)
 ├── alembic/                    # 数据库迁移
+├── docker/                     # Docker 辅助文件
+│   └── entrypoint.sh           #   容器启动脚本 (自动迁移)
 └── docs/plans/                 # 实施计划文档
 ```
 
@@ -148,6 +160,8 @@ AI_news/
 | `research_report` | 研究报告 | **embedding**, target_price |
 | `money_flow` | 资金流向 | net_mf_amount, north_net |
 | `dragon_tiger` | 龙虎榜 | inst_buy, inst_sell |
+| `polymarket_markets` | 预测市场合约 | question, outcome_prices |
+| `polymarket_snapshots` | 市场价格快照 | price, volume |
 
 ### 设计亮点
 
@@ -188,11 +202,9 @@ API_KEY_REQUIRED=false
 WEBHOOK_SECRET=
 
 # AI 分析 (可选)
-AI_ANALYSIS_ENABLED=true
-AI_API_KEY=your_api_key
-AI_PROVIDER=ppinfra
-AI_MODEL=zai-org/glm-4.7
-AI_BASE_URL=https://api.ppinfra.com/openai/v1
+AI_ANALYSIS_ENABLED=false
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
 
 # 前端（可选）
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -202,6 +214,11 @@ NEXT_PUBLIC_DASHBOARD_API_KEY=
 # Telegram 推送 (可选)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+
+# Polymarket 预测市场 (可选)
+POLYMARKET_ENABLED=true
+POLYMARKET_FETCH_INTERVAL=5
+POLYMARKET_VOLATILITY_THRESHOLD=0.10
 
 # TrendRadar 爬虫 (Docker 模式)
 ENABLE_CRAWLER=true
@@ -213,14 +230,17 @@ CRON_SCHEDULE=*/30 * * * *
 ## Docker 部署
 
 ```bash
-# 启动所有服务
-docker-compose up -d
+# 构建镜像
+docker compose build
+
+# 启动所有服务 (容器启动时自动运行 alembic 数据库迁移)
+docker compose up -d
 
 # 查看日志
-docker-compose logs -f dashboard
+docker compose logs -f dashboard
 
 # 停止服务
-docker-compose down
+docker compose down
 ```
 
 ### 服务列表
@@ -245,6 +265,7 @@ docker-compose down
 | 龙虎榜 | 每日 18:00 | 交易所公布后 |
 | 资金流向 | 每日 16:00 | 盘后统计 |
 | 新闻快讯 | 实时 | RSS 订阅 + Webhook |
+| Polymarket | 每 5 分钟 | 预测市场数据同步 |
 
 ---
 
@@ -264,6 +285,13 @@ pytest --cov=src --cov-report=html
 ---
 
 ## 更新日志
+
+### v3.1.0 (2026-03-04)
+- 新增 Polymarket 预测市场集成（数据采集 + 波动率检测 + 前端页面）
+- AI 引擎迁移至 Google Gemini（替代 OpenAI/DeepSeek）
+- 前端新增行情中心（个股详情 + K线图 + 估值图表）
+- 新增股票搜索功能
+- Docker 优化（entrypoint 自动迁移 + .dockerignore）
 
 ### v3.0.0 (2026-03-03)
 - 新增 Next.js 14 前端 (shadcn/ui + ECharts 可视化)

@@ -202,25 +202,16 @@ class TestAnalyzeReportWithLLM:
 
     @pytest.mark.asyncio
     async def test_successful_analysis(self):
-        mock_response = MagicMock()
-        mock_response.text = '{"core_logic": "增长强劲", "catalysts": ["新品"], "risks": ["竞争"], "sentiment_score": 0.8}'
+        raw_text = '{"core_logic": "增长强劲", "catalysts": ["新品"], "risks": ["竞争"], "sentiment_score": 0.8}'
 
-        mock_aio_models = AsyncMock()
-        mock_aio_models.generate_content = AsyncMock(return_value=mock_response)
-        mock_aio = MagicMock()
-        mock_aio.models = mock_aio_models
-        mock_client = MagicMock()
-        mock_client.aio = mock_aio
-
-        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
-            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
-                result = await analyze_report_with_llm(
-                    {
-                        "report_title": "业绩超预期",
-                        "institution": "中信证券",
-                        "rating": "买入",
-                    }
-                )
+        with patch("src.ai_engine.report_parser.call_with_retry", new_callable=AsyncMock, return_value=raw_text):
+            result = await analyze_report_with_llm(
+                {
+                    "report_title": "业绩超预期",
+                    "institution": "中信证券",
+                    "rating": "买入",
+                }
+            )
 
         assert result is not None
         assert result["core_logic"] == "增长强劲"
@@ -229,44 +220,27 @@ class TestAnalyzeReportWithLLM:
 
     @pytest.mark.asyncio
     async def test_handles_api_error(self):
-        mock_aio_models = AsyncMock()
-        mock_aio_models.generate_content = AsyncMock(side_effect=Exception("API error"))
-        mock_aio = MagicMock()
-        mock_aio.models = mock_aio_models
-        mock_client = MagicMock()
-        mock_client.aio = mock_aio
-
-        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
-            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
-                result = await analyze_report_with_llm(
-                    {
-                        "report_title": "test",
-                        "institution": "test",
-                        "rating": "买入",
-                    }
-                )
+        with patch("src.ai_engine.report_parser.call_with_retry", new_callable=AsyncMock, side_effect=Exception("API error")):
+            result = await analyze_report_with_llm(
+                {
+                    "report_title": "test",
+                    "institution": "test",
+                    "rating": "买入",
+                }
+            )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_extracts_json_from_markdown(self):
-        mock_response = MagicMock()
-        mock_response.text = '```json\n{"core_logic": "test", "catalysts": [], "risks": [], "sentiment_score": 0.5}\n```'
+        raw_text = '```json\n{"core_logic": "test", "catalysts": [], "risks": [], "sentiment_score": 0.5}\n```'
 
-        mock_aio_models = AsyncMock()
-        mock_aio_models.generate_content = AsyncMock(return_value=mock_response)
-        mock_aio = MagicMock()
-        mock_aio.models = mock_aio_models
-        mock_client = MagicMock()
-        mock_client.aio = mock_aio
-
-        with patch("src.ai_engine.report_parser.get_gemini_client", return_value=mock_client):
-            with patch("src.ai_engine.report_parser.get_default_model", return_value="gemini-2.0-flash"):
-                result = await analyze_report_with_llm(
-                    {
-                        "report_title": "test",
-                        "institution": "test",
-                        "rating": "买入",
-                    }
-                )
+        with patch("src.ai_engine.report_parser.call_with_retry", new_callable=AsyncMock, return_value=raw_text):
+            result = await analyze_report_with_llm(
+                {
+                    "report_title": "test",
+                    "institution": "test",
+                    "rating": "买入",
+                }
+            )
         assert result is not None
         assert result["core_logic"] == "test"

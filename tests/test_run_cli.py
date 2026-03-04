@@ -9,7 +9,7 @@ def test_run_analyze_executes_ai_pipeline(monkeypatch, capsys):
 
     calls = {"limit": None}
 
-    async def _fake_analyze_pending_news(limit: int = 20):
+    async def _fake_analyze_pending_news(repo, limit: int = 20):
         calls["limit"] = limit
         return {"analyzed": 2, "pending": 0}
 
@@ -18,7 +18,7 @@ def test_run_analyze_executes_ai_pipeline(monkeypatch, capsys):
         {"analyzed_count": 3, "pending_count": 1},
     ]
 
-    def _fake_stats():
+    def _fake_stats(repo):
         return stats.pop(0)
 
     monkeypatch.setattr(sentiment_module, "analyze_pending_news", _fake_analyze_pending_news)

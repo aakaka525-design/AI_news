@@ -8,6 +8,7 @@
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -15,7 +16,14 @@ from typing import Optional
 
 from src.database.connection import get_connection
 
-from src.ai_engine.gemini_client import get_gemini_client, get_default_model
+from src.ai_engine.gemini_client import (
+    get_gemini_client,
+    get_default_model,
+    call_with_retry,
+    parse_json_response,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def log(msg: str):
@@ -245,8 +253,6 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
         log("   ⚠️ GEMINI_API_KEY 未配置")
         return None
 
-    model = get_default_model()
-
     prompt = REPORT_ANALYSIS_PROMPT.format(
         title=report.get("report_title", ""),
         institution=report.get("institution", ""),
@@ -254,25 +260,16 @@ async def analyze_report_with_llm(report: dict) -> Optional[dict]:
     )
 
     try:
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=prompt,
+        result_text = await call_with_retry(
+            prompt,
             config=GenerateContentConfig(
                 temperature=0.3,
                 max_output_tokens=500,
             ),
         )
-
-        content = (response.text or "").strip()
-        # 提取 JSON
-        if content.startswith("{"):
-            return json.loads(content)
-        else:
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if match:
-                return json.loads(match.group())
+        return parse_json_response(result_text)
     except Exception as e:
-        log(f"   ⚠️ LLM 分析失败: {e}")
+        logger.error(f"LLM 研报分析失败: {e}")
 
     return None
 

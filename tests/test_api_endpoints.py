@@ -434,7 +434,7 @@ async def test_rss_sentiment_stats_endpoint_success(client, monkeypatch):
     monkeypatch.setattr(
         sentiment_module,
         "get_sentiment_stats",
-        lambda: {
+        lambda repo: {
             "analyzed_count": 3,
             "pending_count": 1,
             "distribution": {"positive": 2, "neutral": 1},
