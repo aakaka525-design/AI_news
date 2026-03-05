@@ -352,6 +352,33 @@ def _ensure_compat_views(conn: sqlite3.Connection) -> None:
     except (sqlite3.OperationalError, sqlite3.DatabaseError):
         pass  # View creation is best-effort for backwards compatibility
 
+    try:
+        if not _table_exists(conn, "data_freshness"):
+            needed = ["ts_stock_basic", "ts_daily", "ts_fina_indicator"]
+            if all(_table_exists(conn, t) for t in needed):
+                _create_or_replace_view(
+                    conn,
+                    "data_freshness",
+                    """
+                    SELECT
+                        b.ts_code,
+                        b.name,
+                        MAX(d.trade_date) AS latest_daily,
+                        MAX(f.end_date) AS latest_financial,
+                        CAST((julianday('now') - julianday(
+                            substr(MAX(f.end_date),1,4)||'-'||
+                            substr(MAX(f.end_date),5,2)||'-'||
+                            substr(MAX(f.end_date),7,2)
+                        )) / 90 AS INTEGER) AS financial_lag_quarters
+                    FROM ts_stock_basic b
+                    LEFT JOIN ts_daily d ON b.ts_code = d.ts_code
+                    LEFT JOIN ts_fina_indicator f ON b.ts_code = f.ts_code
+                    GROUP BY b.ts_code
+                    """,
+                )
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        pass
+
 
 def get_connection(timeout: int = 30) -> sqlite3.Connection:
     """

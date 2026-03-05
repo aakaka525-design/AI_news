@@ -277,6 +277,29 @@ def score_fundamentals(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
     fina = fina.drop_duplicates(subset="ts_code", keep="first")
     scores = scores.merge(fina, on="ts_code", how="left")
 
+    # ── 数据新鲜度: 计算财报滞后季度数
+    ref_date_row = conn.execute("SELECT MAX(trade_date) FROM ts_daily_basic").fetchone()
+    ref_date = ref_date_row[0] if ref_date_row else datetime.now().strftime("%Y%m%d")
+
+    fina_freshness_query = """
+        SELECT ts_code, MAX(end_date) as latest_end_date
+        FROM ts_fina_indicator
+        GROUP BY ts_code
+    """
+    freshness = pd.read_sql_query(fina_freshness_query, conn)
+    scores = scores.merge(freshness, on="ts_code", how="left")
+
+    def calc_lag_quarters(row):
+        if pd.isna(row.get("latest_end_date")):
+            return 4
+        try:
+            ref = datetime.strptime(str(ref_date)[:8], "%Y%m%d")
+            end = datetime.strptime(str(row["latest_end_date"])[:8], "%Y%m%d")
+            return max(0, int((ref - end).days / 90))
+        except (ValueError, TypeError):
+            return 4
+    scores["financial_lag_quarters"] = scores.apply(calc_lag_quarters, axis=1)
+
     # ROE评分 (base): >15%=8, >10%=5, >5%=2, else 0
     scores["fund_roe"] = np.select(
         [scores["roe"] > 15, scores["roe"] > 10, scores["roe"] > 5],
@@ -380,7 +403,11 @@ def score_fundamentals(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         scores["fund_roe"] + scores["fund_pe"].fillna(0) + scores["fund_growth"]
     ).round(2)
 
-    cols_drop = ["roe", "netprofit_yoy", "pe_ttm"]
+    # 滞后加权: 滞后 >= 3 个季度，基本面总分减半
+    stale = scores["financial_lag_quarters"] >= 3
+    scores.loc[stale, "score_fundamental"] = (scores.loc[stale, "score_fundamental"] * 0.5).round(2)
+
+    cols_drop = ["roe", "netprofit_yoy", "pe_ttm", "latest_end_date"]
     scores.drop(columns=[c for c in cols_drop if c in scores.columns], inplace=True)
     return scores
 
