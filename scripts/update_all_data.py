@@ -54,6 +54,7 @@ def main():
         ("src.data_ingestion.tushare.holder_number", "股东人数数据"),
         ("src.data_ingestion.tushare.northbound", "北向持股全量"),
         ("scripts.compute_industry_valuation", "行业估值中位数计算"),
+        ("src.data_ingestion.tushare.express_forecast", "业绩快报/预告"),
     ]
 
     results = []
