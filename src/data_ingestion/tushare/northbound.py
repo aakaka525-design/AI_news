@@ -45,7 +45,8 @@ def init_tables(conn=None):
             vol INTEGER,
             ratio REAL,
             exchange TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(ts_code, trade_date)
         )
     """)
@@ -95,17 +96,19 @@ def fetch_northbound_by_date(trade_date: str, client: TushareAdapter = None, con
         count = 0
         for _, row in df.iterrows():
             try:
+                now = datetime.now().isoformat()
                 conn.execute("""
                     INSERT OR REPLACE INTO ts_hk_hold
-                    (ts_code, trade_date, vol, ratio, exchange, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (ts_code, trade_date, vol, ratio, exchange, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     row.get("ts_code"),
                     row.get("trade_date"),
                     row.get("vol"),
                     row.get("ratio"),
                     row.get("exchange"),
-                    datetime.now().isoformat(),
+                    now,
+                    now,
                 ))
                 count += 1
             except Exception as e:
