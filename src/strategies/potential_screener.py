@@ -607,6 +607,18 @@ def print_results(top_df: pd.DataFrame, full_df: pd.DataFrame, detail: bool):
               f"最高={s.max():.1f}  P90={s.quantile(0.9):.1f}")
     print(f"  候选池: {len(full_df)} 只股票")
 
+    # 数据质量摘要
+    print("\n  数据质量:")
+    if "data_completeness" in full_df.columns:
+        pe_missing = (full_df["data_completeness"] == "pe_missing").sum()
+        print(f"    PE缺失: {pe_missing}/{len(full_df)} ({pe_missing/len(full_df)*100:.1f}%)")
+    if "financial_lag_quarters" in full_df.columns:
+        stale = (full_df["financial_lag_quarters"] >= 3).sum()
+        print(f"    财报滞后≥3季: {stale}/{len(full_df)} ({stale/len(full_df)*100:.1f}%)")
+    if "capital_margin" in full_df.columns:
+        margin_na = full_df["capital_margin"].isna().sum()
+        print(f"    非两融标的: {margin_na}/{len(full_df)} ({margin_na/len(full_df)*100:.1f}%)")
+
 
 def main():
     parser = argparse.ArgumentParser(description="多因子潜力股筛选系统")
