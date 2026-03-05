@@ -1,5 +1,6 @@
 """Tests for PolymarketFetcher (scheduler task entry point)."""
 
+import builtins
 import json
 import pytest
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.data_ingestion.polymarket.models import PolymarketBase, PolymarketSnapshot
 from src.data_ingestion.polymarket.fetcher import PolymarketFetcher
+from src.data_ingestion.polymarket.translator import MarketTranslator
 
 
 @pytest.fixture()
@@ -60,3 +62,19 @@ class TestFetcher:
         fetcher = PolymarketFetcher(Session, mock_repo, enabled=False)
         fetcher.run()
         MockClient.return_value.get_active_markets.assert_not_called()
+
+
+def test_market_translator_graceful_when_dependency_missing(monkeypatch):
+    """Translator should gracefully disable itself when deep-translator is unavailable."""
+    original_import = builtins.__import__
+
+    def _import(name, *args, **kwargs):
+        if name == "deep_translator":
+            raise ImportError("mocked missing deep_translator")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    translator = MarketTranslator()
+    translated = translator.translate_markets(lambda: None, limit=10)
+    assert translated == 0

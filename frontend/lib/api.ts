@@ -24,21 +24,37 @@ import type {
   StockProfileResponse,
   TradingDayResponse,
   ValuationHistoryResponse,
-} from "./types";
+  } from "./types";
+
+type QueryParams = Record<string, string | undefined>;
+
+function buildApiUrl(path: string, params?: QueryParams): string {
+  const search = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) search.set(k, v);
+    });
+  }
+  const query = search.toString();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (API_BASE_URL.startsWith("http://") || API_BASE_URL.startsWith("https://")) {
+    const url = new URL(API_BASE_URL);
+    const basePath = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+    url.pathname = `${basePath}${normalizedPath}`;
+    if (query) url.search = query;
+    return url.toString();
+  }
+
+  const base = API_BASE_URL.endsWith("/") ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  return `${base}${normalizedPath}${query ? `?${query}` : ""}`;
+}
 
 async function fetchApi<T>(
   path: string,
-  params?: Record<string, string>,
+  params?: QueryParams,
 ): Promise<T> {
-  const url = new URL(path, API_BASE_URL);
-  if (params) {
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) url.searchParams.set(k, v);
-    });
-  }
-  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY;
-  const headers: HeadersInit = apiKey ? { "X-API-Key": apiKey } : {};
-  const res = await fetch(url.toString(), { headers });
+  const res = await fetch(buildApiUrl(path, params));
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -97,14 +113,15 @@ export const fetchAnomalyStats = () =>
 export const fetchSchedulerJobs = () =>
   fetchApi<SchedulerJobsResponse>("/api/scheduler/jobs");
 
-async function postApi<T>(path: string, body?: unknown): Promise<T> {
-  const url = new URL(path, API_BASE_URL);
-  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY;
-  const headers: HeadersInit = { "Content-Type": "application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}) };
-  const res = await fetch(url.toString(), {
+async function postApi<T>(
+  path: string,
+  options?: { params?: QueryParams; body?: unknown },
+): Promise<T> {
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  const res = await fetch(buildApiUrl(path, options?.params), {
     method: "POST",
     headers,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
   });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
@@ -165,19 +182,19 @@ export const fetchRssManual = () =>
 export const fetchResearchManual = (stockCode?: string) =>
   postApi<{ fetched: number; saved?: number; stock_code?: string }>(
     "/api/research/fetch",
-    stockCode ? { stock_code: stockCode } : undefined,
+    { params: stockCode ? { stock_code: stockCode } : undefined },
   );
 
 export const detectAnomaliesManual = (stockCode?: string) =>
   postApi<{ result: Record<string, number>; stock_code?: string }>(
     "/api/anomalies/detect",
-    stockCode ? { stock_code: stockCode } : undefined,
+    { params: stockCode ? { stock_code: stockCode } : undefined },
   );
 
 export const analyzeManual = (date?: string) =>
   postApi<{ analysis_summary?: string; analysis_id?: number; input_count?: number; date?: string; error?: string }>(
     "/api/analyze",
-    date ? { date } : undefined,
+    { body: { date: date ?? new Date().toISOString().slice(0, 10) } },
   );
 
 // Integrity

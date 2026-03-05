@@ -400,7 +400,7 @@ async def get_analysis(analysis_id: int):
     """获取历史分析结果"""
     row = await run_in_threadpool(_repo.get_analysis_by_id, analysis_id)
     if not row:
-        return {"error": "分析结果不存在"}
+        raise HTTPException(status_code=404, detail="分析结果不存在")
     return row
 
 
@@ -455,7 +455,7 @@ async def api_facts(news_id: int):
     """API - 获取单条新闻的结构化事实"""
     row = await run_in_threadpool(_repo.get_news_by_id, news_id)
     if not row or not row.get("cleaned_data"):
-        return {"error": "Not found or not cleaned"}
+        raise HTTPException(status_code=404, detail="Not found or not cleaned")
     return row["cleaned_data"]
 
 
@@ -632,95 +632,94 @@ async def run_scheduled_task(
     流程：RSS 抓取 → 数据加载 → AI 分析 → 存储
     """
     global _task_running
-    
-    # 防重入检查 (P2 修复)
-    if _task_running:
-        return {"error": "任务正在执行中，请稍后重试", "status": "busy"}
-    
+
     from datetime import datetime
-    import json
-    
+
+    # 防重入检查与状态置位必须在同一临界区内，避免并发竞态
     async with _task_lock:
+        if _task_running:
+            raise HTTPException(status_code=409, detail="任务正在执行中，请稍后重试")
         _task_running = True
+    try:
+        result = {
+            "start_time": datetime.now().isoformat(),
+            "steps": []
+        }
+
+        # Step 1: 抓取 RSS
+        if not request.skip_rss:
+            try:
+                from rss_fetcher import run_rss_fetch
+                items = await run_rss_fetch(save=True)
+                result["steps"].append({"step": "rss_fetch", "status": "ok", "count": len(items)})
+            except Exception as e:
+                result["steps"].append({"step": "rss_fetch", "status": "error", "error": str(e)})
+
+        # Step 2: 加载数据（优先 RSS，然后 news 表）
+        items = []
+        data_source = None
+
         try:
-            result = {
-                "start_time": datetime.now().isoformat(),
-                "steps": []
-            }
-            
-            # Step 1: 抓取 RSS
-            if not request.skip_rss:
-                try:
-                    from rss_fetcher import run_rss_fetch
-                    items = await run_rss_fetch(save=True)
-                    result["steps"].append({"step": "rss_fetch", "status": "ok", "count": len(items)})
-                except Exception as e:
-                    result["steps"].append({"step": "rss_fetch", "status": "error", "error": str(e)})
-            
-            # Step 2: 加载数据（优先 RSS，然后 news 表）
-            items = []
-            data_source = None
-            
+            from rss_fetcher import get_recent_rss
+            rss_items = get_recent_rss(limit=20)
+            if rss_items:
+                items = [{"id": r["id"], "title": r["title"], "content": r.get("summary", "")} for r in rss_items]
+                data_source = "rss"
+        except Exception as e:
+            print(f"⚠️ RSS 加载失败: {e}")
+
+        if not items:
             try:
-                from rss_fetcher import get_recent_rss
-                rss_items = get_recent_rss(limit=20)
-                if rss_items:
-                    items = [{"id": r["id"], "title": r["title"], "content": r.get("summary", "")} for r in rss_items]
-                    data_source = "rss"
+                news_rows = _repo.get_recent_news_for_task(limit=20)
+                if news_rows:
+                    items = news_rows
+                    data_source = "news"
             except Exception as e:
-                print(f"⚠️ RSS 加载失败: {e}")
-            
-            if not items:
-                try:
-                    news_rows = _repo.get_recent_news_for_task(limit=20)
-                    if news_rows:
-                        items = news_rows
-                        data_source = "news"
-                except Exception as e:
-                    print(f"⚠️ News 加载失败: {e}")
-            
-            if not items:
-                result["error"] = "没有可用数据"
-                return result
-            
-            result["steps"].append({"step": "load_data", "status": "ok", "source": data_source, "count": len(items)})
-            
-            # Step 3: AI 分析
-            analyzer = create_analyzer_from_env()
-            if not analyzer:
-                result["error"] = "AI 分析器未配置"
-                return result
-            
-            try:
-                analysis = await analyzer.analyze_opportunities(items)
-                if "error" in analysis:
-                    result["steps"].append({"step": "ai_analyze", "status": "error", "error": analysis["error"]})
-                    return result
-                result["steps"].append({"step": "ai_analyze", "status": "ok"})
-            except Exception as e:
-                result["steps"].append({"step": "ai_analyze", "status": "error", "error": str(e)})
-                return result
-            
-            # Step 4: 保存到数据库
-            try:
-                date = datetime.now().strftime("%Y-%m-%d")
-                analysis_id = _repo.insert_analysis(
-                    date=date,
-                    input_count=len(items),
-                    analysis_summary=analysis.get("analysis_summary", ""),
-                    opportunities=analysis.get("opportunities", []),
-                )
-                result["steps"].append({"step": "save_db", "status": "ok", "analysis_id": analysis_id})
-            except Exception as e:
-                result["steps"].append({"step": "save_db", "status": "error", "error": str(e)})
-            
-            # 汇总
-            result["end_time"] = datetime.now().isoformat()
-            result["analysis_summary"] = analysis.get("analysis_summary", "")
-            result["opportunities_count"] = len(analysis.get("opportunities", []))
-            
+                print(f"⚠️ News 加载失败: {e}")
+
+        if not items:
+            result["error"] = "没有可用数据"
             return result
-        finally:
+
+        result["steps"].append({"step": "load_data", "status": "ok", "source": data_source, "count": len(items)})
+
+        # Step 3: AI 分析
+        analyzer = create_analyzer_from_env()
+        if not analyzer:
+            result["error"] = "AI 分析器未配置"
+            return result
+
+        try:
+            analysis = await analyzer.analyze_opportunities(items)
+            if "error" in analysis:
+                result["steps"].append({"step": "ai_analyze", "status": "error", "error": analysis["error"]})
+                return result
+            result["steps"].append({"step": "ai_analyze", "status": "ok"})
+        except Exception as e:
+            result["steps"].append({"step": "ai_analyze", "status": "error", "error": str(e)})
+            return result
+
+        # Step 4: 保存到数据库
+        try:
+            date = datetime.now().strftime("%Y-%m-%d")
+            analysis_id = _repo.insert_analysis(
+                date=date,
+                input_count=len(items),
+                analysis_summary=analysis.get("analysis_summary", ""),
+                opportunities=analysis.get("opportunities", []),
+            )
+            result["steps"].append({"step": "save_db", "status": "ok", "analysis_id": analysis_id})
+        except Exception as e:
+            result["steps"].append({"step": "save_db", "status": "error", "error": str(e)})
+
+        # 汇总
+        result["end_time"] = datetime.now().isoformat()
+        result["analysis_summary"] = analysis.get("analysis_summary", "")
+        result["opportunities_count"] = len(analysis.get("opportunities", []))
+
+        return result
+    finally:
+        async with _task_lock:
             _task_running = False
 
 
@@ -1037,7 +1036,7 @@ async def get_polymarket_history(
 # ============================================================
 
 @app.get("/api/ai/usage")
-async def get_ai_usage():
+async def get_ai_usage(_: None = Depends(verify_api_key)):
     """获取 AI API 用量统计"""
     from src.ai_engine.gemini_client import get_usage_stats
     return get_usage_stats()

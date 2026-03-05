@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useSchedulerJobs, useFreshness, useHealth, useJobAction, useManualActions, useIntegrityCheck } from "@/lib/hooks";
 
 export default function SettingsPage() {
@@ -15,6 +16,9 @@ export default function SettingsPage() {
   const { fetchRss, fetchResearch, detectAnomalies, analyze } = useManualActions();
   const integrityCheck = useIntegrityCheck();
   const [actionResults, setActionResults] = useState<Record<string, string>>({});
+  const [analyzeDate, setAnalyzeDate] = useState<string>(
+    () => new Date().toISOString().slice(0, 10),
+  );
 
   const handleAction = async (key: string, fn: () => Promise<unknown>) => {
     setActionResults((prev) => ({ ...prev, [key]: "执行中..." }));
@@ -69,12 +73,20 @@ export default function SettingsPage() {
           <CardTitle className="text-sm font-medium">手动操作</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 max-w-xs">
+            <p className="mb-1 text-xs text-muted-foreground">AI 分析日期</p>
+            <Input
+              type="date"
+              value={analyzeDate}
+              onChange={(e) => setAnalyzeDate(e.target.value)}
+            />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               { key: "rss", label: "抓取 RSS", desc: "手动抓取 RSS 订阅源", fn: () => fetchRss.mutateAsync(undefined) },
               { key: "research", label: "抓取研报", desc: "手动抓取研究报告", fn: () => fetchResearch.mutateAsync(undefined) },
               { key: "anomaly", label: "异常检测", desc: "运行异常信号检测", fn: () => detectAnomalies.mutateAsync(undefined) },
-              { key: "analyze", label: "AI 分析", desc: "运行 AI 新闻分析", fn: () => analyze.mutateAsync(undefined) },
+              { key: "analyze", label: "AI 分析", desc: "运行 AI 新闻分析", fn: () => analyze.mutateAsync(analyzeDate) },
             ].map((action) => (
               <div key={action.key} className="flex items-center justify-between rounded-md border p-3">
                 <div>

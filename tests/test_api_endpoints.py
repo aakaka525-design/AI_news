@@ -284,9 +284,8 @@ async def test_hotspots_after_webhook(client):
 @pytest.mark.asyncio
 async def test_facts_not_found(client):
     resp = await client.get("/api/facts/9999")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "error" in body
+    assert resp.status_code == 404
+    assert "detail" in resp.json()
 
 
 @pytest.mark.asyncio
@@ -428,6 +427,14 @@ async def test_get_analysis_endpoint_returns_row(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_analysis_endpoint_not_found_returns_404(client, monkeypatch):
+    monkeypatch.setattr(api_main._repo, "get_analysis_by_id", lambda _analysis_id: None)
+    resp = await client.get("/api/analysis/777")
+    assert resp.status_code == 404
+    assert "detail" in resp.json()
+
+
+@pytest.mark.asyncio
 async def test_rss_sentiment_stats_endpoint_success(client, monkeypatch):
     import src.ai_engine.sentiment as sentiment_module
 
@@ -499,3 +506,198 @@ async def test_trading_day_endpoint_success(client, monkeypatch):
     assert body["date"] == "2026-03-03"
     assert body["is_trading_day"] is True
     assert body["latest_trading_day"] == "2026-03-02"
+
+
+@pytest.mark.asyncio
+async def test_run_task_returns_409_when_busy(client, monkeypatch):
+    monkeypatch.setattr(api_main, "_task_running", True)
+    resp = await client.post("/api/run_task", json={})
+    assert resp.status_code == 409
+    assert "detail" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_stocks_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_stock_list",
+        lambda *_args: {"total": 1, "page": 1, "page_size": 20, "data": [{"ts_code": "000001.SZ"}]},
+    )
+    resp = await client.get("/api/stocks?page=1&page_size=20")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stocks_industries_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(api_main._stock_repo, "get_industries", lambda: ["银行", "白酒"])
+    resp = await client.get("/api/stocks/industries")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == ["银行", "白酒"]
+
+
+@pytest.mark.asyncio
+async def test_stock_profile_endpoint_returns_profile(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_stock_profile",
+        lambda _code: {"ts_code": "000001.SZ", "name": "平安银行", "valuation": None},
+    )
+    resp = await client.get("/api/stocks/000001.SZ/profile")
+    assert resp.status_code == 200
+    assert resp.json()["ts_code"] == "000001.SZ"
+
+
+@pytest.mark.asyncio
+async def test_stock_valuation_history_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_valuation_history",
+        lambda _code, _limit: [{"trade_date": "20260301", "pe_ttm": 12.3}],
+    )
+    resp = await client.get("/api/stocks/000001.SZ/valuation-history?limit=5")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_stock_daily_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_stock_daily",
+        lambda _code, _start, _end, _limit: [{"trade_date": "20260301", "close": 10.2}],
+    )
+    resp = await client.get("/api/stocks/000001.SZ/daily?limit=5")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_market_overview_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_market_overview",
+        lambda _date: [{"ts_code": "000001.SH", "close": 3000.0}],
+    )
+    resp = await client.get("/api/market/overview")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_money_flow_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_money_flow",
+        lambda *_args: [{"ts_code": "000001.SZ", "net_mf_amount": 123.0}],
+    )
+    resp = await client.get("/api/money-flow?limit=5")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_dragon_tiger_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_dragon_tiger",
+        lambda *_args: [{"ts_code": "000001.SZ", "reason": "测试"}],
+    )
+    resp = await client.get("/api/dragon-tiger?limit=5")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_sectors_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._stock_repo,
+        "get_sectors",
+        lambda *_args: [{"block_name": "银行", "pct_chg": 1.2}],
+    )
+    resp = await client.get("/api/sectors?limit=5")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_polymarket_markets_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._polymarket_repo,
+        "get_active_markets",
+        lambda _limit: [{"condition_id": "0x1", "question": "Q1"}],
+    )
+    resp = await client.get("/api/polymarket/markets?limit=5")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_polymarket_market_detail_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._polymarket_repo,
+        "get_market_detail",
+        lambda _cid: {"condition_id": "0x1", "question": "Q1"},
+    )
+    resp = await client.get("/api/polymarket/markets/0x1")
+    assert resp.status_code == 200
+    assert resp.json()["condition_id"] == "0x1"
+
+
+@pytest.mark.asyncio
+async def test_polymarket_history_endpoint_returns_data(client, monkeypatch):
+    monkeypatch.setattr(
+        api_main._polymarket_repo,
+        "get_price_history",
+        lambda _cid, _limit: [{"id": 1, "market_id": "0x1", "outcome_prices": [0.5, 0.5]}],
+    )
+    resp = await client.get("/api/polymarket/markets/0x1/history?limit=5")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ai_usage_endpoint_requires_api_key_when_configured(client, monkeypatch):
+    monkeypatch.setattr(api_main, "API_KEY_REQUIRED", True)
+    monkeypatch.setattr(api_main, "DASHBOARD_API_KEY", "unit-test-key")
+    resp = await client.get("/api/ai/usage")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ai_usage_endpoint_returns_stats_with_valid_key(client, monkeypatch):
+    import src.ai_engine.gemini_client as gemini_module
+
+    monkeypatch.setattr(api_main, "API_KEY_REQUIRED", True)
+    monkeypatch.setattr(api_main, "DASHBOARD_API_KEY", "unit-test-key")
+    monkeypatch.setattr(gemini_module, "get_usage_stats", lambda: {"total_calls": 1})
+    resp = await client.get("/api/ai/usage", headers={"X-API-Key": "unit-test-key"})
+    assert resp.status_code == 200
+    assert resp.json()["total_calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_polymarket_translate_requires_api_key_when_configured(client, monkeypatch):
+    monkeypatch.setattr(api_main, "API_KEY_REQUIRED", True)
+    monkeypatch.setattr(api_main, "DASHBOARD_API_KEY", "unit-test-key")
+    resp = await client.post("/api/polymarket/translate?limit=2")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_polymarket_translate_returns_count_with_valid_key(client, monkeypatch):
+    import src.data_ingestion.polymarket.translator as translator_module
+
+    class _DummyTranslator:
+        def translate_markets(self, _session_factory, _limit):
+            return 3
+
+    monkeypatch.setattr(api_main, "API_KEY_REQUIRED", True)
+    monkeypatch.setattr(api_main, "DASHBOARD_API_KEY", "unit-test-key")
+    monkeypatch.setattr(translator_module, "MarketTranslator", _DummyTranslator)
+    resp = await client.post(
+        "/api/polymarket/translate?limit=2",
+        headers={"X-API-Key": "unit-test-key"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["translated"] == 3

@@ -15,7 +15,7 @@
 git clone https://github.com/your/AI_news.git
 cd AI_news
 
-# 2. 安装依赖
+# 2. 安装依赖（含 AI + Polymarket + 翻译组件）
 pip install -e .
 
 # 3. 配置环境变量
@@ -207,9 +207,9 @@ GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-3.1-flash-lite-preview
 
 # 前端（可选）
-NEXT_PUBLIC_API_URL=http://localhost:8000
-# 仅当 API_KEY_REQUIRED=true 且浏览器直连后端时设置
-NEXT_PUBLIC_DASHBOARD_API_KEY=
+NEXT_PUBLIC_API_URL=/api/proxy
+# BFF 代理到后端服务（前端容器内）
+DASHBOARD_INTERNAL_URL=http://dashboard:8000
 
 # Telegram 推送 (可选)
 TELEGRAM_BOT_TOKEN=
@@ -223,6 +223,10 @@ POLYMARKET_VOLATILITY_THRESHOLD=0.10
 # TrendRadar 爬虫 (Docker 模式)
 ENABLE_CRAWLER=true
 CRON_SCHEDULE=*/30 * * * *
+
+# Docker 数据库密码（请改成强密码）
+POSTGRES_PASSWORD=change_me_ainews_db_password
+NOCODB_META_PASSWORD=change_me_nocodb_meta_password
 ```
 
 ---

@@ -3,8 +3,6 @@
 import logging
 import time
 
-from deep_translator import GoogleTranslator
-
 from src.data_ingestion.polymarket.models import PolymarketMarket
 
 logger = logging.getLogger(__name__)
@@ -16,6 +14,13 @@ class MarketTranslator:
     """Translates Polymarket questions to Chinese using free Google Translate."""
 
     def __init__(self):
+        self.translator = None
+        try:
+            from deep_translator import GoogleTranslator
+        except ImportError:
+            logger.warning("deep-translator is not installed; Polymarket translation is disabled")
+            return
+
         self.translator = GoogleTranslator(source="en", target="zh-CN")
 
     def translate_markets(self, session_factory, limit: int = 500) -> int:
@@ -23,6 +28,9 @@ class MarketTranslator:
 
         Returns count of successfully translated markets.
         """
+        if self.translator is None:
+            return 0
+
         with session_factory() as session:
             untranslated = (
                 session.query(PolymarketMarket)

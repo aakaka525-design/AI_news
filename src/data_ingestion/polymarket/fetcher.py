@@ -29,7 +29,11 @@ class PolymarketFetcher:
         _threshold = threshold if threshold is not None else POLYMARKET_VOLATILITY_THRESHOLD
         self.client = PolymarketClient()
         self.detector = VolatilityDetector(session_factory, threshold=_threshold)
-        self.translator = MarketTranslator()
+        try:
+            self.translator = MarketTranslator()
+        except Exception as e:
+            logger.warning(f"Polymarket translator init failed (non-fatal): {e}")
+            self.translator = None
 
     def ensure_tables(self, engine) -> None:
         """Create Polymarket tables if they don't exist (idempotent)."""
@@ -58,12 +62,13 @@ class PolymarketFetcher:
             return 0
 
         # Translate untranslated markets (best-effort, won't block on failure)
-        try:
-            translated = self.translator.translate_markets(self.session_factory)
-            if translated:
-                logger.info(f"Polymarket: translated {translated} markets to Chinese")
-        except Exception as e:
-            logger.warning(f"Polymarket translation failed (non-fatal): {e}")
+        if self.translator is not None:
+            try:
+                translated = self.translator.translate_markets(self.session_factory)
+                if translated:
+                    logger.info(f"Polymarket: translated {translated} markets to Chinese")
+            except Exception as e:
+                logger.warning(f"Polymarket translation failed (non-fatal): {e}")
 
         for alert in alerts:
             self.news_repo.insert_news(

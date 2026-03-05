@@ -53,6 +53,8 @@ def test_mutating_endpoints_are_protected():
         ("/api/scheduler/resume/{job_id}", "POST"),
         ("/api/scheduler/history/{job_id}", "GET"),
         ("/api/run_task", "POST"),
+        ("/api/ai/usage", "GET"),
+        ("/api/polymarket/translate", "POST"),
     ]
     for path, method in protected_routes:
         assert _route_requires_api_key(path, method), f"{method} {path} 未绑定鉴权依赖"

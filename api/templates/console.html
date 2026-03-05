@@ -264,12 +264,83 @@
             el.textContent = text;
         }
 
+        function clearElement(id) {
+            const el = document.getElementById(id);
+            while (el.firstChild) {
+                el.removeChild(el.firstChild);
+            }
+            return el;
+        }
+
+        function renderOutput(id, kind, text) {
+            const output = document.getElementById(id);
+            output.style.display = 'block';
+            const span = document.createElement('span');
+            span.className = kind;
+            span.textContent = text;
+            output.replaceChildren(span);
+        }
+
+        function renderOutputJson(id, kind, data) {
+            renderOutput(id, kind, JSON.stringify(data, null, 2));
+        }
+
+        function toSafeHttpUrl(value) {
+            if (!value || typeof value !== 'string') return null;
+            try {
+                const parsed = new URL(value, window.location.origin);
+                if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                    return parsed.href;
+                }
+            } catch (e) {
+                return null;
+            }
+            return null;
+        }
+
+        function renderOpportunities(data) {
+            const container = clearElement('opportunities');
+            const summary = document.createElement('div');
+            summary.style.margin = '15px 0';
+            summary.style.color = '#888';
+            summary.textContent = `📝 ${data.analysis_summary || ''}`;
+            container.appendChild(summary);
+
+            (data.opportunities || []).forEach((opp) => {
+                const box = document.createElement('div');
+                box.className = 'opportunity';
+
+                const score = document.createElement('span');
+                score.className = 'score';
+                score.textContent = `${opp.score ?? '-'}分`;
+                box.appendChild(score);
+
+                const type = document.createElement('span');
+                type.style.color = '#888';
+                type.style.fontSize = '12px';
+                type.style.marginLeft = '8px';
+                type.textContent = `${opp.type || ''}`;
+                box.appendChild(type);
+
+                const title = document.createElement('h4');
+                title.textContent = `${opp.title || ''}`;
+                box.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = `👥 ${opp.target_audience || '-'} | ⏰ ${opp.timeliness?.level || '-'} | 📱 ${opp.action_plan?.platform || '-'}`;
+                box.appendChild(meta);
+
+                container.appendChild(box);
+            });
+        }
+
         async function runAnalysis() {
             const date = document.getElementById('analyzeDate').value;
             const limit = document.getElementById('analyzeLimit').value;
 
             setStatus('analyzeStatus', 'loading', '分析中...');
-            document.getElementById('opportunities').innerHTML = '';
+            clearElement('opportunities');
 
             try {
                 const resp = await fetch(`${API_BASE}/api/analyze`, {
@@ -281,35 +352,15 @@
 
                 if (data.error) {
                     setStatus('analyzeStatus', 'err', '失败');
-                    document.getElementById('analyzeResult').style.display = 'block';
-                    document.getElementById('analyzeResult').innerHTML = '<span class="error">' + JSON.stringify(data, null, 2) + '</span>';
+                    renderOutputJson('analyzeResult', 'error', data);
                     return;
                 }
 
                 setStatus('analyzeStatus', 'ok', '完成');
-
-                // 渲染机会点
-                let html = `<div style="margin:15px 0;color:#888;">📝 ${data.analysis_summary || ''}</div>`;
-                (data.opportunities || []).forEach(opp => {
-                    html += `
-                        <div class="opportunity">
-                            <span class="score">${opp.score}分</span>
-                            <span style="color:#888;font-size:12px;margin-left:8px;">${opp.type || ''}</span>
-                            <h4>${opp.title || ''}</h4>
-                            <div class="meta">
-                                👥 ${opp.target_audience || '-'} | 
-                                ⏰ ${opp.timeliness?.level || '-'} | 
-                                📱 ${opp.action_plan?.platform || '-'}
-                            </div>
-                        </div>
-                    `;
-                });
-                document.getElementById('opportunities').innerHTML = html;
-
+                renderOpportunities(data);
             } catch (e) {
                 setStatus('analyzeStatus', 'err', '请求失败');
-                document.getElementById('analyzeResult').style.display = 'block';
-                document.getElementById('analyzeResult').innerHTML = '<span class="error">' + e.message + '</span>';
+                renderOutput('analyzeResult', 'error', e.message || '请求失败');
             }
         }
 
@@ -321,8 +372,7 @@
 
                 if (data.error) {
                     setStatus('rssStatus', 'err', '失败');
-                    document.getElementById('rssResult').style.display = 'block';
-                    document.getElementById('rssResult').innerHTML = '<span class="error">' + data.error + '</span>';
+                    renderOutput('rssResult', 'error', data.error);
                 } else {
                     setStatus('rssStatus', 'ok', `${data.fetched} 条`);
                     loadRSS();
@@ -333,22 +383,45 @@
         }
 
         async function loadRSS() {
+            const list = clearElement('rssList');
             try {
                 const resp = await fetch(`${API_BASE}/api/rss?limit=20`);
                 const data = await resp.json();
+                const items = data.data || [];
 
-                let html = '';
-                (data.data || []).forEach(item => {
-                    html += `
-                        <div class="rss-item">
-                            <a href="${item.link}" target="_blank">${item.title}</a>
-                            <span class="source">${item.source}</span>
-                        </div>
-                    `;
+                if (items.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.style.color = '#666';
+                    empty.style.padding = '20px';
+                    empty.textContent = '暂无数据';
+                    list.appendChild(empty);
+                    return;
+                }
+
+                items.forEach((item) => {
+                    const row = document.createElement('div');
+                    row.className = 'rss-item';
+
+                    const link = document.createElement('a');
+                    const safeHref = toSafeHttpUrl(item.link);
+                    link.href = safeHref || '#';
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = item.title || '';
+                    row.appendChild(link);
+
+                    const source = document.createElement('span');
+                    source.className = 'source';
+                    source.textContent = item.source || '';
+                    row.appendChild(source);
+
+                    list.appendChild(row);
                 });
-                document.getElementById('rssList').innerHTML = html || '<div style="color:#666;padding:20px;">暂无数据</div>';
             } catch (e) {
-                document.getElementById('rssList').innerHTML = '<span class="error">加载失败</span>';
+                const error = document.createElement('span');
+                error.className = 'error';
+                error.textContent = '加载失败';
+                list.appendChild(error);
             }
         }
 
@@ -356,9 +429,9 @@
             try {
                 const resp = await fetch(`${API_BASE}/health`);
                 const data = await resp.json();
-                document.getElementById('healthResult').innerHTML = '<span class="success">' + JSON.stringify(data, null, 2) + '</span>';
+                renderOutputJson('healthResult', 'success', data);
             } catch (e) {
-                document.getElementById('healthResult').innerHTML = '<span class="error">连接失败: ' + e.message + '</span>';
+                renderOutput('healthResult', 'error', `连接失败: ${e.message}`);
             }
         }
 
@@ -366,9 +439,9 @@
             try {
                 const resp = await fetch(`${API_BASE}/api/news?limit=5`);
                 const data = await resp.json();
-                document.getElementById('healthResult').innerHTML = '<span class="info">' + JSON.stringify(data, null, 2) + '</span>';
+                renderOutputJson('healthResult', 'info', data);
             } catch (e) {
-                document.getElementById('healthResult').innerHTML = '<span class="error">' + e.message + '</span>';
+                renderOutput('healthResult', 'error', e.message || '请求失败');
             }
         }
 
@@ -379,9 +452,9 @@
             try {
                 const resp = await fetch(`${API_BASE}${path}`, { method });
                 const data = await resp.json();
-                document.getElementById('apiResult').innerHTML = '<span class="info">' + JSON.stringify(data, null, 2) + '</span>';
+                renderOutputJson('apiResult', 'info', data);
             } catch (e) {
-                document.getElementById('apiResult').innerHTML = '<span class="error">' + e.message + '</span>';
+                renderOutput('apiResult', 'error', e.message || '请求失败');
             }
         }
 

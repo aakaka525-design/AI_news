@@ -38,8 +38,8 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - TZ=Asia/Shanghai
-      - DATABASE_URL=postgresql://ainews:ainews_dev@postgres:5432/ainews
-      - NEWS_DATABASE_URL=postgresql://ainews:ainews_dev@postgres:5432/ainews
+      - DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:-change_me_ainews_db_password}@postgres:5432/ainews
+      - NEWS_DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:-change_me_ainews_db_password}@postgres:5432/ainews
       - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_BASE_URL=${AI_BASE_URL:-}
@@ -85,8 +85,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_DASHBOARD_API_KEY=${NEXT_PUBLIC_DASHBOARD_API_KEY:-}
+      - NEXT_PUBLIC_API_URL=/api/proxy
+      - DASHBOARD_INTERNAL_URL=${DASHBOARD_INTERNAL_URL:-http://dashboard:8000}
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
     depends_on:
       - dashboard
 
@@ -103,7 +104,7 @@ services:
       - nocodb_data:/usr/app/data
     environment:
       - TZ=Asia/Shanghai
-      - NC_DB=pg://nocodb_meta:5432?u=postgres&p=password&d=nocodb
+      - NC_DB=pg://nocodb_meta:5432?u=postgres&p=${NOCODB_META_PASSWORD:-change_me_nocodb_meta_password}&d=nocodb
       # 禁用遥测
       - NC_DISABLE_TELE=true
 
@@ -118,7 +119,7 @@ services:
       - nocodb_pgdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${NOCODB_META_PASSWORD:-change_me_nocodb_meta_password}
       - POSTGRES_DB=nocodb
 
   postgres:
@@ -132,7 +133,7 @@ services:
     environment:
       POSTGRES_DB: ainews
       POSTGRES_USER: ainews
-      POSTGRES_PASSWORD: ainews_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_ainews_db_password}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
