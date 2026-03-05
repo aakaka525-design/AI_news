@@ -61,6 +61,7 @@ def get_candidate_pool(conn: sqlite3.Connection, latest_date: str) -> pd.DataFra
           AND b.name NOT LIKE '%退%'
           AND b.list_date IS NOT NULL
           AND b.list_date <= ?
+          AND (b.list_status = 'L' OR b.list_status IS NULL)
     """
     pool = pd.read_sql_query(query, conn, params=[cutoff_list_date])
     log(f"基础过滤后: {len(pool)} 只股票")
@@ -137,6 +138,8 @@ def score_capital_flow(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
     scores["ts_code_prefix"] = scores["ts_code"].str[:6]
     scores = scores.merge(mg[["ts_code_prefix", "margin_growth"]], on="ts_code_prefix", how="left")
     scores["capital_margin"] = percentile_score(scores["margin_growth"], 10)
+    # Non-margin-eligible stocks (not found in margin_trading) get NaN, not 0
+    scores.loc[scores["margin_growth"].isna(), "capital_margin"] = np.nan
 
     # ── 1c. 北向资金加持 (5分): 近20日出现次数 × 净买入额加权
     hsgt_query = """
