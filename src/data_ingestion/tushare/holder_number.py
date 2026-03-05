@@ -159,25 +159,30 @@ def fetch_all_holder_numbers(client: TushareAdapter = None) -> int:
         client = get_tushare_client()
 
     conn = get_connection()
-    cursor = conn.execute("SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L'")
-    codes = [
-        row["ts_code"] if isinstance(row, sqlite3.Row) else row[0]
-        for row in cursor.fetchall()
-    ]
-    conn.close()
 
-    log(f"共 {len(codes)} 只活跃股票")
+    try:
+        cursor = conn.execute("SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L'")
+        codes = [
+            row["ts_code"] if isinstance(row, sqlite3.Row) else row[0]
+            for row in cursor.fetchall()
+        ]
+        log(f"共 {len(codes)} 只活跃股票")
 
-    total = 0
-    for i, ts_code in enumerate(codes):
-        if (i + 1) % 50 == 0:
-            log(f"[{i + 1}/{len(codes)}] 已处理...")
+        total = 0
+        for i, ts_code in enumerate(codes):
+            if (i + 1) % 50 == 0:
+                log(f"[{i + 1}/{len(codes)}] 已处理...")
 
-        count = fetch_holder_number(ts_code, client=client)
-        total += count
+            try:
+                count = fetch_holder_number(ts_code, client=client, conn=conn)
+                total += count
+            except Exception as e:
+                log(f"   {ts_code} 抓取失败: {e}")
 
-        # Tushare API 限流：每分钟约 200 次
-        time.sleep(0.35)
+            # Tushare API 限流：每分钟约 200 次
+            time.sleep(0.35)
+    finally:
+        conn.close()
 
     log(f"完成! 共保存 {total} 条股东人数记录")
     return total
@@ -191,31 +196,7 @@ def main():
     log("=" * 50)
     log("Tushare 股东人数抓取")
     log("=" * 50)
-
-    init_tables()
-    client = get_tushare_client()
-
-    conn = get_connection()
-    cursor = conn.execute("SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L'")
-    codes = [
-        row["ts_code"] if isinstance(row, sqlite3.Row) else row[0]
-        for row in cursor.fetchall()
-    ]
-    conn.close()
-
-    log(f"共 {len(codes)} 只活跃股票")
-
-    total = 0
-    for i, ts_code in enumerate(codes):
-        if (i + 1) % 50 == 0:
-            log(f"[{i + 1}/{len(codes)}]")
-        count = fetch_holder_number(ts_code, client=client)
-        total += count
-        time.sleep(0.35)
-
-    stats = client.get_stats()
-    log(f"\n请求统计: {stats['total_requests']} 次, {stats['requests_per_minute']:.1f}/分钟")
-    log(f"完成! 共 {total} 条记录")
+    fetch_all_holder_numbers()
 
 
 if __name__ == "__main__":
