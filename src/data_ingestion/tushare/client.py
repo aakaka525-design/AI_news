@@ -375,6 +375,94 @@ class TushareAdapter:
     
     @rate_limit()
     @retry_with_backoff(max_retries=3)
+    def margin_detail(
+        self,
+        trade_date: str = None,
+        ts_code: str = None,
+        start_date: str = None,
+        end_date: str = None
+    ) -> pd.DataFrame:
+        """
+        获取融资融券个股明细
+
+        Returns:
+            DataFrame 包含: trade_date, ts_code, rzye(融资余额), rqye(融券余额),
+                          rzmre(融资买入额), rqyl(融券余量), rzche(融资偿还额),
+                          rqchl(融券偿还量), rqmcl(融券卖出量), rzrqye(融资融券余额)
+        """
+        self._log_request('margin_detail')
+        return self.api.margin_detail(
+            trade_date=trade_date,
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
+    def stk_holdernumber(
+        self,
+        ts_code: str = None,
+        enddate: str = None,
+        start_date: str = None,
+        end_date: str = None
+    ) -> pd.DataFrame:
+        """
+        获取股东人数
+
+        Returns:
+            DataFrame 包含: ts_code, ann_date, end_date, holder_num
+        """
+        self._log_request('stk_holdernumber')
+        return self.api.stk_holdernumber(
+            ts_code=ts_code,
+            enddate=enddate,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
+    def express(
+        self,
+        ts_code: str = None,
+        ann_date: str = None,
+        start_date: str = None,
+        end_date: str = None,
+        period: str = None,
+    ) -> pd.DataFrame:
+        """获取业绩快报"""
+        self._log_request("express")
+        return self.api.express(
+            ts_code=ts_code,
+            ann_date=ann_date,
+            start_date=start_date,
+            end_date=end_date,
+            period=period,
+        )
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
+    def forecast(
+        self,
+        ts_code: str = None,
+        ann_date: str = None,
+        start_date: str = None,
+        end_date: str = None,
+        period: str = None,
+    ) -> pd.DataFrame:
+        """获取业绩预告"""
+        self._log_request("forecast")
+        return self.api.forecast(
+            ts_code=ts_code,
+            ann_date=ann_date,
+            start_date=start_date,
+            end_date=end_date,
+            period=period,
+        )
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
     def balancesheet(
         self,
         ts_code: str = None,
@@ -510,6 +598,62 @@ class TushareAdapter:
             ts_code=ts_code
         )
     
+    # ============================================================
+    # 指数数据
+    # ============================================================
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
+    def index_daily(
+        self,
+        ts_code: str = None,
+        trade_date: str = None,
+        start_date: str = None,
+        end_date: str = None
+    ) -> pd.DataFrame:
+        """
+        获取指数日线行情
+
+        Args:
+            ts_code: 指数代码（如 000001.SH）
+            trade_date: 交易日期（YYYYMMDD）
+            start_date: 开始日期
+            end_date: 结束日期
+        """
+        self._log_request('index_daily')
+        return self.api.index_daily(
+            ts_code=ts_code,
+            trade_date=trade_date,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+    @rate_limit()
+    @retry_with_backoff(max_retries=3)
+    def ths_daily(
+        self,
+        ts_code: str = None,
+        trade_date: str = None,
+        start_date: str = None,
+        end_date: str = None
+    ) -> pd.DataFrame:
+        """
+        获取同花顺板块指数日线行情
+
+        Args:
+            ts_code: 板块指数代码
+            trade_date: 交易日期（YYYYMMDD）
+            start_date: 开始日期
+            end_date: 结束日期
+        """
+        self._log_request('ths_daily')
+        return self.api.ths_daily(
+            ts_code=ts_code,
+            trade_date=trade_date,
+            start_date=start_date,
+            end_date=end_date
+        )
+
     # ============================================================
     # 股票基础信息
     # ============================================================
