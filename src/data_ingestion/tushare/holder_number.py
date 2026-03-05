@@ -161,7 +161,9 @@ def fetch_all_holder_numbers(client: TushareAdapter = None) -> int:
     conn = get_connection()
 
     try:
-        cursor = conn.execute("SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L'")
+        cursor = conn.execute(
+            "SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L' OR list_status IS NULL"
+        )
         codes = [
             row["ts_code"] if isinstance(row, sqlite3.Row) else row[0]
             for row in cursor.fetchall()
