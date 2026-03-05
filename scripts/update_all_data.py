@@ -53,6 +53,7 @@ def main():
         ("src.data_ingestion.tushare.dragon_tiger", "龙虎榜数据"),
         ("src.data_ingestion.tushare.holder_number", "股东人数数据"),
         ("src.data_ingestion.tushare.northbound", "北向持股全量"),
+        ("scripts.compute_industry_valuation", "行业估值中位数计算"),
     ]
 
     results = []
