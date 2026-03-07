@@ -178,14 +178,11 @@ def fetch_hsgt_top10_by_date(trade_date: str, client: TushareAdapter = None) -> 
     conn = get_connection()
     
     try:
-        # 沪股通 + 深股通
+        # 一次获取沪股通+深股通（不传 market_type，API 返回两个市场数据）
         total_count = 0
-        for market_type in ['SH', 'SZ']:
-            df = client.hsgt_top10(trade_date=trade_date, market_type=market_type)
-            
-            if df is None or df.empty:
-                continue
-            
+        df = client.hsgt_top10(trade_date=trade_date)
+
+        if df is not None and not df.empty:
             for _, row in df.iterrows():
                 try:
                     conn.execute("""
@@ -200,7 +197,7 @@ def fetch_hsgt_top10_by_date(trade_date: str, client: TushareAdapter = None) -> 
                         row.get('close'),
                         row.get('change'),
                         row.get('rank'),
-                        market_type,
+                        row.get('market_type'),
                         row.get('amount'),
                         row.get('net_amount'),
                         row.get('buy'),

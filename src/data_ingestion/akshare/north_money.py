@@ -33,6 +33,14 @@ def log(msg: str):
 def init_north_money_table():
     """初始化北向资金表"""
     conn = get_connection()
+    # 清除同名视图或表（确保可以重新创建）
+    row = conn.execute("SELECT type FROM sqlite_master WHERE name='north_money_holding'").fetchone()
+    if row:
+        if row[0] == 'view':
+            conn.execute("DROP VIEW north_money_holding")
+        else:
+            # 表已存在，无需重建
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS north_money_holding (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +103,7 @@ def fetch_north_money():
                 'sortColumns': 'HOLD_DATE',
                 'sortTypes': -1,
                 'source': 'WEB',
+                'filter': '(MARKET_CODE in ("001","003"))',  # 沪股通+深股通(北向)
             }
             
             resp = requests.get(url, headers=headers, params=params, timeout=30)

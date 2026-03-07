@@ -244,49 +244,99 @@ def save_market_summary(records: list):
     return count
 
 
-def fetch_margin_trading(days: int = 1):
-    """获取融资融券数据"""
-    log(f"📊 获取融资融券数据（最近{days}天）...")
-    
-    total_detail = 0
-    total_summary = 0
-    
-    # 获取日期范围
+def fetch_margin_trading_tushare(days: int = 1):
+    """使用 tinyshare (Tushare API) 获取融资融券数据（沪深两市）"""
+    from src.data_ingestion.tushare.client import get_tushare_client
+
+    log(f"📊 获取融资融券数据 via Tushare（最近{days}天）...")
+    client = get_tushare_client()
+
+    total = 0
     end_date = datetime.now()
-    
-    # 获取市场汇总（历史）
-    if days > 1:
-        start_date = (end_date - timedelta(days=days)).strftime("%Y%m%d")
-        end_date_str = end_date.strftime("%Y%m%d")
-        log("   获取市场汇总...")
-        summary = fetch_market_summary(start_date, end_date_str)
-        total_summary = save_market_summary(summary)
-        log(f"   市场汇总: {total_summary} 条")
-    
-    # 获取每日明细
+
+    for i in range(days):
+        date = end_date - timedelta(days=i)
+        if date.weekday() >= 5:
+            continue
+        date_str = date.strftime("%Y%m%d")
+        log(f"   获取 {date_str} ...")
+
+        try:
+            df = client.margin_detail(trade_date=date_str)
+            if df is None or df.empty:
+                log(f"   {date_str}: 无数据（非交易日或数据未更新）")
+                continue
+
+            # 只保留A股（排除ETF等）
+            df = df[df['ts_code'].str.match(r'^(0|3|6)\d{5}\.(SZ|SH)$')]
+
+            records = []
+            for _, row in df.iterrows():
+                ts_code = row.get('ts_code', '')
+                code = ts_code[:6]
+                market = '沪市' if ts_code.endswith('.SH') else '深市'
+                records.append({
+                    "stock_code": code,
+                    "stock_name": None,
+                    "date": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}",
+                    "market": market,
+                    "margin_balance": row.get('rzye'),
+                    "margin_buy": row.get('rzmre'),
+                    "margin_repay": row.get('rzche'),
+                    "short_balance": row.get('rqyl'),
+                    "short_sell": row.get('rqmcl'),
+                    "short_repay": row.get('rqchl'),
+                })
+
+            count = save_margin_data(records)
+            sh_count = sum(1 for r in records if r['market'] == '沪市')
+            sz_count = sum(1 for r in records if r['market'] == '深市')
+            total += count
+            log(f"   {date_str}: 沪市 {sh_count} + 深市 {sz_count} = {count} 条")
+
+        except Exception as e:
+            log(f"   {date_str}: 获取失败: {e}")
+
+    log(f"   ✅ 融资融券: 共 {total} 条")
+    return total, 0
+
+
+def fetch_margin_trading(days: int = 1):
+    """获取融资融券数据（默认使用 Tushare，失败时回退到 akshare）"""
+    try:
+        return fetch_margin_trading_tushare(days)
+    except Exception as e:
+        log(f"   ⚠️ Tushare 获取失败({e})，回退到 akshare...")
+        return _fetch_margin_trading_akshare(days)
+
+
+def _fetch_margin_trading_akshare(days: int = 1):
+    """akshare 回退方案（仅沪市）"""
+    log(f"📊 获取融资融券数据 via akshare（最近{days}天）...")
+
+    total_detail = 0
+    end_date = datetime.now()
+
     for i in range(days):
         date = (end_date - timedelta(days=i))
-        # 跳过周末
         if date.weekday() >= 5:
             continue
         date_str = date.strftime("%Y%m%d")
         log(f"   获取 {date_str} 明细...")
-        
-        # 沪市
+
         sse_data = fetch_margin_detail_sse(date_str)
         sse_count = save_margin_data(sse_data)
-        
-        # 深市
+
         szse_data = fetch_margin_detail_szse(date_str)
         szse_count = save_margin_data(szse_data)
-        
+
         total_detail += sse_count + szse_count
         log(f"   {date_str}: 沪市 {sse_count} + 深市 {szse_count} = {sse_count + szse_count} 条")
-        
-        time.sleep(0.5)  # 避免请求过快
-    
-    log(f"   ✅ 融资融券: 明细 {total_detail} 条，汇总 {total_summary} 条")
-    return total_detail, total_summary
+
+        time.sleep(0.5)
+
+    log(f"   ✅ 融资融券: 明细 {total_detail} 条")
+    return total_detail, 0
 
 
 def main():

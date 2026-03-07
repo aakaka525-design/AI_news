@@ -261,17 +261,91 @@ def fetch_lhb_trader(days: int = 30):
 
 
 def fetch_shareholder_count():
-    """获取股东户数变化"""
-    print("\n👥 获取股东户数变化...")
+    """获取股东户数变化（使用 tinyshare/Tushare API）"""
+    print("\n👥 获取股东户数变化 via Tushare...")
     try:
-        df = ak.stock_zh_a_gdhs()
+        from src.data_ingestion.tushare.client import get_tushare_client
+
+        client = get_tushare_client()
+
+        # 获取最近3个月数据，用于计算前后对比
+        end_date = datetime.now().strftime("%Y%m%d")
+        start_date = (datetime.now() - timedelta(days=90)).strftime("%Y%m%d")
+
+        df = client.stk_holdernumber(start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            print("   ⚠️ 无数据返回")
+            return 0
+
+        # 去除 holder_num 为 NaN 的行
+        import pandas as pd
+        df = df.dropna(subset=['holder_num'])
+        df = df.sort_values(['ts_code', 'end_date'], ascending=[True, False])
+
         conn = get_connection()
-        
+        count = 0
+
+        for ts_code, group in df.groupby('ts_code'):
+            rows = group.head(2)
+            if len(rows) < 1:
+                continue
+
+            current = rows.iloc[0]
+            holder_current = int(current['holder_num']) if pd.notna(current['holder_num']) else None
+            stats_date_current = str(current['end_date'])
+            ann_date = str(current.get('ann_date', ''))
+
+            holder_last = None
+            holder_change = None
+            holder_change_pct = None
+            stats_date_last = ''
+
+            if len(rows) >= 2:
+                prev = rows.iloc[1]
+                holder_last = int(prev['holder_num']) if pd.notna(prev['holder_num']) else None
+                stats_date_last = str(prev['end_date'])
+                if holder_current and holder_last and holder_last > 0:
+                    holder_change = holder_current - holder_last
+                    holder_change_pct = round(holder_change / holder_last * 100, 4)
+
+            stock_code = ts_code[:6]
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO shareholder_count
+                    (stock_code, stock_name, price, holder_count_current, holder_count_last,
+                     holder_change, holder_change_pct, price_change_pct,
+                     stats_date_current, stats_date_last, announce_date, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    stock_code, None, None,
+                    holder_current, holder_last,
+                    holder_change, holder_change_pct, None,
+                    stats_date_current, stats_date_last, ann_date,
+                    datetime.now().isoformat()
+                ))
+                count += 1
+            except Exception:
+                pass
+
+        conn.commit()
+        conn.close()
+        print(f"   ✅ 保存 {count} 条股东户数数据")
+        return count
+    except Exception as e:
+        print(f"   ⚠️ Tushare 获取失败({e})，回退到 akshare...")
+        return _fetch_shareholder_count_akshare()
+
+
+def _fetch_shareholder_count_akshare():
+    """akshare 回退方案"""
+    try:
+        df = ak.stock_zh_a_gdhs(symbol="最新")
+        conn = get_connection()
         count = 0
         for _, row in df.iterrows():
             try:
                 conn.execute("""
-                    INSERT OR REPLACE INTO shareholder_count 
+                    INSERT OR REPLACE INTO shareholder_count
                     (stock_code, stock_name, price, holder_count_current, holder_count_last,
                      holder_change, holder_change_pct, price_change_pct,
                      stats_date_current, stats_date_last, announce_date, updated_at)
@@ -291,15 +365,14 @@ def fetch_shareholder_count():
                     datetime.now().isoformat()
                 ))
                 count += 1
-            except Exception as e:
+            except Exception:
                 pass
-        
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条股东户数数据")
+        print(f"   ✅ 保存 {count} 条股东户数数据 (akshare)")
         return count
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        print(f"   ⚠️ akshare 也失败: {e}")
         return 0
 
 
