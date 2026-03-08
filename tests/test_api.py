@@ -513,3 +513,64 @@ class TestCsvExportEndpoints:
     def test_potential_export_returns_csv(self, client):
         resp = client.get("/api/screens/potential/export")
         assert resp.status_code in (200, 404)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/stocks/{ts_code}/score
+# ---------------------------------------------------------------------------
+
+
+class TestScoreEndpoint:
+    def test_score_invalid_ts_code_returns_422(self, client):
+        resp = client.get("/api/stocks/INVALID/score")
+        assert resp.status_code == 422
+
+    def test_score_no_data_returns_404(self, client):
+        resp = client.get("/api/stocks/000001.SZ/score")
+        assert resp.status_code == 404
+
+    def test_score_valid_ts_code_format(self, client):
+        """Valid ts_code format should not return 422."""
+        resp = client.get("/api/stocks/600519.SH/score")
+        assert resp.status_code != 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/scores/ranking
+# ---------------------------------------------------------------------------
+
+
+class TestScoresRankingEndpoint:
+    def test_ranking_empty_returns_structure(self, client):
+        resp = client.get("/api/scores/ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total" in data
+        assert "items" in data
+        assert isinstance(data["items"], list)
+        assert "score_version" in data
+
+    def test_ranking_limit_too_large_returns_422(self, client):
+        resp = client.get("/api/scores/ranking", params={"limit": 201})
+        assert resp.status_code == 422
+
+    def test_ranking_limit_zero_returns_422(self, client):
+        resp = client.get("/api/scores/ranking", params={"limit": 0})
+        assert resp.status_code == 422
+
+    def test_ranking_invalid_sort_by_returns_422(self, client):
+        resp = client.get("/api/scores/ranking", params={"sort_by": "invalid"})
+        assert resp.status_code == 422
+
+    def test_ranking_valid_sort_by(self, client):
+        for sort in ("score", "price_trend", "flow", "fundamentals"):
+            resp = client.get("/api/scores/ranking", params={"sort_by": sort})
+            assert resp.status_code == 200
+
+    def test_ranking_with_industry_filter(self, client):
+        resp = client.get("/api/scores/ranking", params={"industry": "银行"})
+        assert resp.status_code == 200
+
+    def test_ranking_with_low_confidence(self, client):
+        resp = client.get("/api/scores/ranking", params={"include_low_confidence": True})
+        assert resp.status_code == 200

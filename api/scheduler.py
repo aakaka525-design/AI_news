@@ -91,6 +91,15 @@ TASK_CONFIGS = {
         "enabled": True,
         "description": "盘中拉取实时行情快照（9:30-15:00 交易日）"
     },
+    "composite_score": {
+        "name": "综合评分计算",
+        "trigger": "cron",
+        "hour": 17,
+        "minute": 30,
+        "day_of_week": "mon-fri",
+        "enabled": True,
+        "description": "收盘后全市场综合评分批量计算"
+    },
 }
 
 # Static mapping: task_id -> expected (source_key, dataset_key, db_name) tuples.
@@ -113,6 +122,9 @@ TASK_EXPECTED_DATASETS: dict[str, list[tuple[str, str, str]]] = {
     "screen_snapshot": [
         ("derived", "screen_rps", "stocks"),
         ("derived", "screen_potential", "stocks"),
+    ],
+    "composite_score": [
+        ("derived", "composite_score", "stocks"),
     ],
 }
 
@@ -575,5 +587,39 @@ def register_default_tasks():
         fetch_intraday_snapshot()
 
     scheduler_manager.register_task("intraday_snapshot", intraday_task)
+
+    # ------------------------------------------------------------------
+    # 综合评分（带 telemetry）
+    # ------------------------------------------------------------------
+    from src.scoring.engine import compute_all_scores
+    from fetchers.trading_calendar import get_recent_trading_days
+
+    def composite_score_task():
+        # 使用最近交易日作为评分日期
+        recent = get_recent_trading_days(1)
+        if not recent:
+            logger.warning("无可用交易日，跳过综合评分")
+            return [
+                DatasetTelemetry(
+                    source_key="derived", dataset_key="composite_score",
+                    db_name="stocks", record_count=0, status="empty",
+                )
+            ]
+
+        trade_date = recent[0].replace("-", "")
+        summary = compute_all_scores(trade_date)
+
+        return [
+            DatasetTelemetry(
+                source_key="derived",
+                dataset_key="composite_score",
+                db_name="stocks",
+                record_count=summary.scored,
+                latest_record_date=trade_date,
+                status="ok" if summary.scored > 0 else "empty",
+            )
+        ]
+
+    scheduler_manager.register_task("composite_score", composite_score_task)
 
     logger.info("✅ 默认任务注册完成")

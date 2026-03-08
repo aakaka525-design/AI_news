@@ -27,6 +27,12 @@ jobs:
           python -m py_compile src/telemetry/__init__.py
           python -m py_compile src/telemetry/models.py
           python -m py_compile src/telemetry/recorder.py
+          python -m py_compile src/scoring/__init__.py
+          python -m py_compile src/scoring/models.py
+          python -m py_compile src/scoring/engine.py
+          python -m py_compile src/scoring/factors.py
+          python -m py_compile src/scoring/freshness.py
+          python -m py_compile src/scoring/exclusions.py
       - name: Run tests
         run: pytest tests/ -v --tb=short -x || true
       - name: Check response_model coverage

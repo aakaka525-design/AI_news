@@ -1449,6 +1449,176 @@ async def get_ai_usage(_: None = Depends(verify_api_key)):
     return get_usage_stats()
 
 
+# ============================================================
+# 综合评分 API
+# ============================================================
+
+
+@app.get("/api/stocks/{ts_code}/score")
+async def get_stock_score(
+    ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
+):
+    """获取单只股票的综合评分 + 因子明细"""
+    def _query():
+        from src.database.connection import get_connection
+        conn = get_connection()
+        try:
+            # 最新评分
+            try:
+                score_row = conn.execute(
+                    "SELECT * FROM stock_composite_score "
+                    "WHERE ts_code = ? ORDER BY trade_date DESC LIMIT 1",
+                    (ts_code,),
+                ).fetchone()
+            except Exception:
+                return None  # 表不存在
+
+            if not score_row:
+                return None
+
+            result = dict(score_row)
+            result["experimental"] = bool(result.get("experimental"))
+            result["low_confidence"] = bool(result.get("low_confidence"))
+
+            if result["status"] == "excluded":
+                result["buckets"] = {}
+                result["factors"] = []
+                return result
+
+            # 因子明细
+            factor_rows = conn.execute(
+                "SELECT * FROM stock_composite_factor "
+                "WHERE ts_code = ? AND trade_date = ? AND score_version = ?",
+                (ts_code, result["trade_date"], result.get("score_version", "v1")),
+            ).fetchall()
+
+            factors = []
+            for fr in factor_rows:
+                f = dict(fr)
+                f["available"] = bool(f.get("available"))
+                factors.append(f)
+
+            # 构造 buckets 概要
+            buckets = {}
+            for bucket_name in ("price_trend", "flow", "fundamentals"):
+                b_factors = [f for f in factors if f.get("bucket") == bucket_name]
+                n_avail = sum(1 for f in b_factors if f["available"] and (f.get("weight_effective") or 0) > 0)
+                n_total = len(b_factors) or 1
+                w_nom = sum(f.get("weight_nominal") or 0 for f in b_factors)
+                w_eff = sum(f.get("weight_effective") or 0 for f in b_factors)
+
+                score_key = f"{bucket_name}_score"
+                buckets[bucket_name] = {
+                    "score": result.get(score_key),
+                    "weight_nominal": round(w_nom, 4),
+                    "weight_effective": round(w_eff, 4),
+                    "coverage_ratio": round(n_avail / n_total, 2),
+                }
+
+            result["buckets"] = buckets
+            result["factors"] = factors
+
+            # 去掉不需要的字段
+            for key in ("id", "created_at"):
+                result.pop(key, None)
+
+            return result
+        finally:
+            conn.close()
+
+    data = await run_in_threadpool(_query)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No score data for {ts_code}")
+    return data
+
+
+@app.get("/api/scores/ranking")
+async def get_scores_ranking(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    sort_by: str = Query("score", pattern=r'^(score|price_trend|flow|fundamentals)$'),
+    industry: Optional[str] = Query(None),
+    include_low_confidence: bool = Query(False),
+):
+    """综合评分排行榜"""
+    def _query():
+        from src.database.connection import get_connection
+        conn = get_connection()
+        try:
+            # 最新 trade_date
+            try:
+                date_row = conn.execute(
+                    "SELECT MAX(trade_date) as d FROM stock_composite_score WHERE status = 'scored'"
+                ).fetchone()
+            except Exception:
+                return {"trade_date": None, "score_version": "v1", "total": 0, "items": []}
+            if not date_row or not date_row["d"]:
+                return {"trade_date": None, "score_version": "v1", "total": 0, "items": []}
+
+            trade_date = date_row["d"]
+
+            # 构建排序列
+            sort_col_map = {
+                "score": "s.score",
+                "price_trend": "s.price_trend_score",
+                "flow": "s.flow_score",
+                "fundamentals": "s.fundamentals_score",
+            }
+            sort_col = sort_col_map.get(sort_by, "s.score")
+
+            # 构建 WHERE
+            conditions = ["s.trade_date = ?", "s.status = 'scored'", f"{sort_col} IS NOT NULL"]
+            params: list = [trade_date]
+
+            if not include_low_confidence:
+                conditions.append("s.low_confidence = 0")
+
+            if industry:
+                conditions.append("b.industry = ?")
+                params.append(industry)
+
+            where = " AND ".join(conditions)
+
+            # 总数
+            count_sql = (
+                f"SELECT COUNT(*) as cnt FROM stock_composite_score s "
+                f"JOIN ts_stock_basic b ON s.ts_code = b.ts_code "
+                f"WHERE {where}"
+            )
+            total = conn.execute(count_sql, params).fetchone()["cnt"]
+
+            # 排行
+            query_sql = (
+                f"SELECT s.ts_code, b.name, b.industry, s.score, "
+                f"s.price_trend_score, s.flow_score, s.fundamentals_score, "
+                f"s.coverage_ratio, s.low_confidence "
+                f"FROM stock_composite_score s "
+                f"JOIN ts_stock_basic b ON s.ts_code = b.ts_code "
+                f"WHERE {where} "
+                f"ORDER BY {sort_col} DESC "
+                f"LIMIT ? OFFSET ?"
+            )
+            params.extend([limit, offset])
+            rows = conn.execute(query_sql, params).fetchall()
+
+            items = []
+            for r in rows:
+                item = dict(r)
+                item["low_confidence"] = bool(item.get("low_confidence"))
+                items.append(item)
+
+            return {
+                "trade_date": trade_date,
+                "score_version": "v1",
+                "total": total,
+                "items": items,
+            }
+        finally:
+            conn.close()
+
+    return await run_in_threadpool(_query)
+
+
 @app.post("/api/polymarket/translate")
 async def trigger_polymarket_translation(
     limit: int = Query(200, ge=1, le=1000),
