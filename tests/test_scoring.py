@@ -128,31 +128,54 @@ class TestExclusions:
         assert "000001.SZ" not in exclusions
         conn.close()
 
-    def test_new_listing_excluded_without_calendar_table(self):
-        """trading_calendar 表不存在时，fallback 路径仍能排除新股"""
-        from unittest.mock import patch
+    def test_new_listing_excluded_via_ts_daily_fallback(self):
+        """trading_calendar 不存在时，通过 ts_daily 推导 cutoff 排除新股"""
+        from datetime import datetime, timedelta
         conn = _create_test_db()
-        # 插入一个"今天上市"的股票 — 肯定不满 60 个交易日
-        from datetime import datetime
-        today_yyyymmdd = datetime.now().strftime("%Y%m%d")
+
+        # 创建 ts_daily 表，插入 61 个交易日的数据
+        conn.execute("CREATE TABLE ts_daily (ts_code TEXT, trade_date TEXT, close REAL)")
+        base = datetime.now()
+        for i in range(61):
+            d = (base - timedelta(days=i)).strftime("%Y%m%d")
+            conn.execute("INSERT INTO ts_daily VALUES ('000001.SZ', ?, 10.0)", (d,))
+
+        # 插入一个"今天上市"的股票
+        today_yyyymmdd = base.strftime("%Y%m%d")
         conn.execute(
             "INSERT INTO ts_stock_basic VALUES ('688999.SH', '新股测试', NULL, ?, '半导体')",
             (today_yyyymmdd,),
         )
         conn.commit()
 
-        # Mock get_prev_n_trading_days 返回足够的交易日
-        # 生成 61 个假交易日，最早的在 120 天前
-        from datetime import timedelta
+        # conn 中没有 trading_calendar 表，会 fallback 到 ts_daily
+        from src.scoring.exclusions import get_exclusions
+        exclusions = get_exclusions(conn)
+        assert exclusions.get("688999.SH") == "new_listing"
+        conn.close()
+
+    def test_new_listing_old_stock_not_excluded(self):
+        """上市超过 60 个交易日的股票不应被排除"""
+        from datetime import datetime, timedelta
+        conn = _create_test_db()
+
+        conn.execute("CREATE TABLE ts_daily (ts_code TEXT, trade_date TEXT, close REAL)")
         base = datetime.now()
-        fake_days = [(base - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(61)]
+        for i in range(61):
+            d = (base - timedelta(days=i)).strftime("%Y%m%d")
+            conn.execute("INSERT INTO ts_daily VALUES ('000001.SZ', ?, 10.0)", (d,))
 
-        with patch("fetchers.trading_calendar.get_prev_n_trading_days", return_value=fake_days):
-            # 注意：conn 里没有 trading_calendar 表，会走 fallback
-            from src.scoring.exclusions import get_exclusions
-            exclusions = get_exclusions(conn)
-            assert exclusions.get("688999.SH") == "new_listing"
+        # 上市日期在 cutoff 之前（200 天前）
+        old_date = (base - timedelta(days=200)).strftime("%Y%m%d")
+        conn.execute(
+            "INSERT INTO ts_stock_basic VALUES ('600519.SH', '贵州茅台', NULL, ?, '白酒')",
+            (old_date,),
+        )
+        conn.commit()
 
+        from src.scoring.exclusions import get_exclusions
+        exclusions = get_exclusions(conn)
+        assert "600519.SH" not in exclusions
         conn.close()
 
 

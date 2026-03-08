@@ -42,34 +42,55 @@ def get_exclusions(conn: sqlite3.Connection) -> dict[str, str]:
     return exclusions
 
 
+def _get_cutoff_date(conn: sqlite3.Connection) -> str | None:
+    """推导 60 个交易日前的 cutoff 日期 (YYYYMMDD)。
+
+    按优先级尝试三种数据源:
+    1. trading_calendar 表（可能不存在）
+    2. ts_daily 表的 distinct trade_date（真实库中稳定存在）
+    3. fetchers.trading_calendar 模块
+    """
+    # 策略 1: trading_calendar 表
+    try:
+        rows = conn.execute(
+            "SELECT cal_date FROM trading_calendar WHERE is_open=1 "
+            "ORDER BY cal_date DESC LIMIT 61"
+        ).fetchall()
+        if len(rows) >= 61:
+            return rows[-1]["cal_date"].replace("-", "")
+    except Exception:
+        pass
+
+    # 策略 2: 从 ts_daily 推导（真实库中稳定可用）
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT trade_date FROM ts_daily "
+            "ORDER BY trade_date DESC LIMIT 61"
+        ).fetchall()
+        if len(rows) >= 61:
+            return rows[-1]["trade_date"].replace("-", "")
+    except Exception:
+        pass
+
+    # 策略 3: fetchers 模块（可能也依赖缺失的表，最后兜底）
+    try:
+        from fetchers.trading_calendar import get_prev_n_trading_days
+        recent_days = get_prev_n_trading_days(61)
+        if len(recent_days) >= 61:
+            return recent_days[-1].replace("-", "")
+    except Exception:
+        pass
+
+    return None
+
+
 def _add_new_listing_exclusions(
     conn: sqlite3.Connection, exclusions: dict[str, str]
 ) -> None:
     """检查上市未满 60 个交易日的股票。"""
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    # 获取交易日历
-    try:
-        cal_rows = conn.execute(
-            "SELECT cal_date FROM trading_calendar WHERE is_open=1 AND cal_date <= ? ORDER BY cal_date DESC LIMIT 61",
-            (today,),
-        ).fetchall()
-    except Exception:
-        # trading_calendar 表可能不在 stocks.db 中，使用 fetchers 模块
-        cal_rows = None
-
-    if cal_rows is not None and len(cal_rows) >= 61:
-        cutoff_date = cal_rows[-1]["cal_date"]
-    else:
-        from fetchers.trading_calendar import get_prev_n_trading_days
-        recent_days = get_prev_n_trading_days(61)
-        if len(recent_days) >= 61:
-            cutoff_date = recent_days[-1]  # 60 个交易日前的日期
-        else:
-            return
-
-    # 将 cutoff_date 转换为 YYYYMMDD 格式以匹配 list_date
-    cutoff_yyyymmdd = cutoff_date.replace("-", "")
+    cutoff_yyyymmdd = _get_cutoff_date(conn)
+    if not cutoff_yyyymmdd:
+        return
 
     rows = conn.execute(
         "SELECT ts_code FROM ts_stock_basic WHERE (list_status = 'L' OR list_status IS NULL) AND list_date > ?",
