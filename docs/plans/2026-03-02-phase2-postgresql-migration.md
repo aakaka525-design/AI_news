@@ -1,3 +1,7 @@
+> **状态：前提失效 / 仅供历史参考**
+> 迁移前提"改一个 URL 就能迁 PG"已被 Codex 审计否定（实测 53 个文件直接 import sqlite3）。
+> 参见 `docs/ai-handoff/2026-03-08-codex-response-to-fourth-round-proposal.md`
+
 # Phase 2: PostgreSQL Migration Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

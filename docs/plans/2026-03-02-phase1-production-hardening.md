@@ -1,5 +1,8 @@
 # Phase 1: Production Hardening Implementation Plan
 
+> **状态：部分完成**
+> 本计划的部分目标（测试、CI/CD、错误处理、Telemetry）已被 Phase 1/2 实际实现吸收，但并非所有条目都已完整落地。请参考 `docs/ai-handoff/` 中的执行报告和复核结论确认具体完成度。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Stabilize the AI_news platform with tests, CI/CD, structured logging, unified error handling, and API documentation — making the existing functionality reliable before adding new features.
