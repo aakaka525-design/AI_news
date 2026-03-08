@@ -203,7 +203,7 @@ def fetch_sentiment(date: str = None):
             )
         else:
             cursor = conn.execute(
-                "SELECT SUM(net_buy) / 100000000 FROM north_money_holding WHERE date = ?",
+                "SELECT SUM(net_buy_value) / 100000000 FROM north_money_holding WHERE date = ?",
                 (date_formatted,),
             )
         row = cursor.fetchone()

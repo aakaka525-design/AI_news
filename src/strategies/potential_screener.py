@@ -171,7 +171,7 @@ def score_capital_flow(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         """
         hk = pd.read_sql_query(hk_query, conn)
         scores = scores.merge(hk, on="ts_code", how="left")
-        scores["capital_north"] = percentile_score(scores["hk_change"].fillna(0), 5)
+        scores["capital_north"] = percentile_score(scores["hk_change"], 5)
         if "hk_change" in scores.columns:
             scores.drop(columns=["hk_change"], inplace=True)
         log(f"  北向持股覆盖: {hk['ts_code'].nunique()} 只")
@@ -191,7 +191,7 @@ def score_capital_flow(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         scores = scores.merge(hsgt[["ts_code", "total_net"]], on="ts_code", how="left")
         scores["capital_north"] = np.where(
             scores["total_net"].fillna(0) > 0,
-            percentile_score(scores["total_net"].fillna(0), 5), 0
+            percentile_score(scores["total_net"], 5), 0
         )
         if "total_net" in scores.columns:
             scores.drop(columns=["total_net"], inplace=True)
@@ -249,7 +249,7 @@ def score_trading_activity(conn: sqlite3.Connection, candidates: pd.Series) -> p
         if not hn.empty:
             scores = scores.merge(hn, on="ts_code", how="left")
             # 股东人数减少 = 筹码集中 = 正面, 取反值按百分位评分
-            neg_change = -scores["holder_num_change"].fillna(0)
+            neg_change = -scores["holder_num_change"]
             scores["trade_concentration"] = percentile_score(neg_change, 10)
             if "holder_num_change" in scores.columns:
                 scores.drop(columns=["holder_num_change"], inplace=True)

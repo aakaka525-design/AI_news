@@ -299,6 +299,11 @@ def fetch_margin_trading_tushare(days: int = 1):
         except Exception as e:
             log(f"   {date_str}: 获取失败: {e}")
 
+    # 如果尝试了多天但全量失败，抛出异常触发回退
+    attempted_days = sum(1 for i in range(days) if (end_date - timedelta(days=i)).weekday() < 5)
+    if total == 0 and attempted_days > 0:
+        raise RuntimeError(f"Tushare 融资融券: {attempted_days} 个交易日全部失败，触发回退")
+
     log(f"   ✅ 融资融券: 共 {total} 条")
     return total, 0
 

@@ -59,29 +59,23 @@ def fetch_trading_calendar(year: int = None, timeout: int = 60) -> list[str]:
     Returns:
         list[str]: 交易日列表 (YYYY-MM-DD)
     """
-    import signal
-
-    def _timeout_handler(signum, frame):
-        raise TimeoutError(f"AkShare fetch_trading_calendar timed out after {timeout}s")
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
     try:
-        old_handler = signal.getsignal(signal.SIGALRM)
-        signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(timeout)
-        try:
-            df = ak.tool_trade_date_hist_sina()
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(ak.tool_trade_date_hist_sina)
+            try:
+                df = future.result(timeout=timeout)
+            except FuturesTimeoutError:
+                raise TimeoutError(f"AkShare fetch_trading_calendar timed out after {timeout}s")
 
-        # 转换为字符串格式
         dates = df['trade_date'].astype(str).tolist()
-
-        # 如果指定年份，过滤
         if year:
             dates = [d for d in dates if d.startswith(str(year))]
-
         return dates
+    except TimeoutError:
+        logger.warning("获取交易日历超时 (%ds)", timeout)
+        return []
     except Exception as e:
         logger.warning("获取交易日历失败: %s", e)
         return []

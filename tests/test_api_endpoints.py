@@ -510,10 +510,15 @@ async def test_trading_day_endpoint_success(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_task_returns_409_when_busy(client, monkeypatch):
-    monkeypatch.setattr(api_main, "_task_running", True)
+    # Simulate lock being held by making it already acquired
+    import asyncio
+    lock = asyncio.Lock()
+    await lock.acquire()  # Pre-acquire so it appears busy
+    monkeypatch.setattr(api_main, "_task_lock", lock)
     resp = await client.post("/api/run_task", json={})
     assert resp.status_code == 409
     assert "detail" in resp.json()
+    lock.release()  # Clean up
 
 
 @pytest.mark.asyncio
