@@ -521,6 +521,23 @@ async def health():
         db_error = str(e)
 
     scheduler_ok = bool(SCHEDULER_STATUS["running"])
+
+    # 快照新鲜度检查
+    snapshot_info = {}
+    try:
+        from src.database.connection import get_connection
+        conn = get_connection()
+        try:
+            for tbl in ("screen_rps_snapshot", "screen_potential_snapshot"):
+                row = conn.execute(
+                    f"SELECT MAX(snapshot_date) FROM {tbl}"  # noqa: safe table name
+                ).fetchone()
+                snapshot_info[tbl] = str(row[0]) if row and row[0] else None
+        finally:
+            conn.close()
+    except Exception:
+        pass  # 快照检查非关键
+
     all_healthy = db_ok and scheduler_ok
     status = "healthy" if all_healthy else "degraded"
     payload = {
@@ -530,7 +547,8 @@ async def health():
             "running": scheduler_ok,
             "error": SCHEDULER_STATUS["error"],
         },
-        "version": "2.0.0",
+        "snapshots": snapshot_info,
+        "version": "2.1.0",
     }
     return JSONResponse(content=payload, status_code=200 if all_healthy else 503)
 

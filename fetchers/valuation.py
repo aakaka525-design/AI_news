@@ -20,8 +20,11 @@ from fetchers.db import STOCKS_DB_PATH
 # Worker脚本模板 - 输出到CSV
 WORKER_SCRIPT = '''
 import baostock as bs
+import logging
 import sys
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 codes = sys.argv[1].split(",")
 start_date = sys.argv[2]
@@ -50,8 +53,8 @@ for code in codes:
                     pb = row[2] if row[2] else ""
                     ps = row[3] if row[3] else ""
                     results.append(f"{code},{row[0]},{pe},{pb},{ps}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("获取估值数据失败 code=%s: %s", code, e)
 
 bs.logout()
 

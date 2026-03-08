@@ -72,7 +72,7 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         data = resp.json()
         assert "version" in data
-        assert data["version"] == "2.0.0"
+        assert data["version"] == "2.1.0"
 
     def test_health_db_structure(self, client):
         resp = client.get("/health")
@@ -366,3 +366,125 @@ class TestErrorScenarios:
         data = resp.json()
         assert data["total"] >= 1
         assert data["data"][0]["title"] == "Roundtrip Test"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/search
+# ---------------------------------------------------------------------------
+
+
+class TestSearchEndpoint:
+    def test_search_missing_query_returns_422(self, client):
+        resp = client.get("/api/search")
+        assert resp.status_code == 422
+
+    def test_search_empty_query_returns_422(self, client):
+        resp = client.get("/api/search", params={"q": ""})
+        assert resp.status_code == 422
+
+    def test_search_valid_query_returns_200(self, client):
+        resp = client.get("/api/search", params={"q": "test"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "stocks" in data
+        assert "news" in data
+
+    def test_search_type_stocks(self, client):
+        resp = client.get("/api/search", params={"q": "000001", "type": "stocks"})
+        assert resp.status_code == 200
+
+    def test_search_type_news(self, client):
+        resp = client.get("/api/search", params={"q": "芯片", "type": "news"})
+        assert resp.status_code == 200
+
+    def test_search_invalid_type_returns_422(self, client):
+        resp = client.get("/api/search", params={"q": "test", "type": "invalid"})
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/screens/*
+# ---------------------------------------------------------------------------
+
+
+class TestScreenerEndpoints:
+    def test_rps_returns_structure(self, client):
+        resp = client.get("/api/screens/rps")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "snapshot_date" in data
+        assert "items" in data
+        assert isinstance(data["items"], list)
+
+    def test_rps_invalid_date_returns_422(self, client):
+        resp = client.get("/api/screens/rps", params={"date": "not-date"})
+        assert resp.status_code == 422
+
+    def test_potential_returns_structure(self, client):
+        resp = client.get("/api/screens/potential")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "snapshot_date" in data
+        assert "items" in data
+
+    def test_potential_invalid_date_returns_422(self, client):
+        resp = client.get("/api/screens/potential", params={"date": "20260301"})
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/analysis/full/{ts_code}
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisEndpoint:
+    def test_analysis_invalid_ts_code_returns_422(self, client):
+        resp = client.get("/api/analysis/full/INVALID")
+        assert resp.status_code == 422
+
+    def test_analysis_valid_format(self, client):
+        resp = client.get("/api/analysis/full/301033")
+        # May 404 if no data, but should not 422
+        assert resp.status_code != 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/intraday/{ts_code}
+# ---------------------------------------------------------------------------
+
+
+class TestIntradayEndpoint:
+    def test_intraday_invalid_ts_code_returns_422(self, client):
+        resp = client.get("/api/intraday/INVALID")
+        assert resp.status_code == 422
+
+    def test_intraday_valid_returns_structure(self, client):
+        resp = client.get("/api/intraday/000001.SZ")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "ts_code" in data
+        assert "price" in data
+
+    def test_intraday_no_suffix_returns_422(self, client):
+        resp = client.get("/api/intraday/000001")
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# CSV Export endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestCsvExportEndpoints:
+    def test_daily_export_invalid_ts_code_returns_422(self, client):
+        resp = client.get("/api/stocks/INVALID/daily/export")
+        assert resp.status_code == 422
+
+    def test_rps_export_returns_csv(self, client):
+        resp = client.get("/api/screens/rps/export")
+        # May 404 if no data, but should respond
+        assert resp.status_code in (200, 404)
+
+    def test_potential_export_returns_csv(self, client):
+        resp = client.get("/api/screens/potential/export")
+        assert resp.status_code in (200, 404)
