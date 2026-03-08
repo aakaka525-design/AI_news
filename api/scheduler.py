@@ -118,6 +118,7 @@ TASK_EXPECTED_DATASETS: dict[str, list[tuple[str, str, str]]] = {
         ("tushare", "ts_hk_hold", "stocks"),
         ("tushare", "ts_top10_holders", "stocks"),
         ("tushare", "ts_cyq_perf", "stocks"),
+        ("tushare", "ts_cashflow", "stocks"),
     ],
     "screen_snapshot": [
         ("derived", "screen_rps", "stocks"),

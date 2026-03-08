@@ -929,6 +929,7 @@ async def check_data_freshness():
 async def get_data_source_health():
     """返回所有数据源最新健康状态（来自 telemetry）"""
     def _query():
+        import sqlite3
         from src.database.connection import get_connection
         conn = get_connection()
         try:
@@ -941,7 +942,7 @@ async def get_data_source_health():
                     "FROM data_source_health ORDER BY source_key, dataset_key"
                 )
                 rows = cursor.fetchall()
-            except Exception as exc:
+            except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc):
                     return []
                 raise

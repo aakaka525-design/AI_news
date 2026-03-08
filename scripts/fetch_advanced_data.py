@@ -327,6 +327,7 @@ class AdvancedFetcher:
             "ts_hk_hold": 0,
             "ts_top10_holders": 0,
             "ts_cyq_perf": 0,
+            "ts_cashflow": 0,
         }
 
         # 1. Daily Basic (增量：跳过已存在日期)
@@ -370,6 +371,7 @@ class AdvancedFetcher:
             futures = [executor.submit(self.patch_capex, code) for code in capex_targets]
             done = 0
             for f in as_completed(futures):
+                counts["ts_cashflow"] += f.result() or 0
                 done += 1
                 if done % 50 == 0:
                      print(f"\r   进度: {done}/{len(capex_targets)}", end="", flush=True)
