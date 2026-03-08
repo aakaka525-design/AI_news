@@ -23,12 +23,12 @@ def run_api():
         "api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=os.getenv("ENV", "dev").lower() in ("dev", "development")
     )
 
 
 def run_fetch():
-    """运行数据抓取"""
+    """运行 Tushare 日线数据抓取"""
     from src.data_ingestion.tushare.daily import main
     main()
 

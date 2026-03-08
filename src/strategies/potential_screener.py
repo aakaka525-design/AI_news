@@ -37,9 +37,9 @@ def log(msg: str):
 
 
 def percentile_score(series: pd.Series, max_score: float) -> pd.Series:
-    """将 Series 按百分位映射到 [0, max_score] 分数。"""
-    ranks = series.rank(pct=True, na_option="bottom")
-    return (ranks * max_score).round(2)
+    """将 Series 按百分位映射到 [0, max_score] 分数。NaN 值得 0 分。"""
+    ranks = series.rank(pct=True)
+    return (ranks * max_score).fillna(0).round(2)
 
 
 def get_latest_trade_date(conn: sqlite3.Connection) -> str:
@@ -464,9 +464,11 @@ def score_fundamentals(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         if "industry" in scores.columns:
             scores.drop(columns=["industry"], inplace=True)
 
-    # ── PE 缺失时: 重分配 7 分 PE 权重 → ROE(+3) + growth(+4)
-    scores.loc[pe_missing, "fund_roe"] = scores.loc[pe_missing, "fund_roe"] + 3.0
-    scores.loc[pe_missing, "fund_growth"] = scores.loc[pe_missing, "fund_growth"] + 4.0
+    # ── PE 缺失时: 仅当 ROE/growth 数据有效时重分配 PE 权重
+    has_roe = scores["roe"].notna() if "roe" in scores.columns else pd.Series(False, index=scores.index)
+    has_growth = scores["netprofit_yoy"].notna() if "netprofit_yoy" in scores.columns else pd.Series(False, index=scores.index)
+    scores.loc[pe_missing & has_roe, "fund_roe"] = scores.loc[pe_missing & has_roe, "fund_roe"] + 3.0
+    scores.loc[pe_missing & has_growth, "fund_growth"] = scores.loc[pe_missing & has_growth, "fund_growth"] + 4.0
 
     # ── 业绩快报/预告补充 (缓解财报滞后)
     try:

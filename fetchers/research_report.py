@@ -76,22 +76,17 @@ def fetch_stock_reports(stock_code: str, timeout: int = 60) -> list[dict]:
     Returns:
         List of report dicts compatible with ReportRepository.upsert_report()
     """
-    import signal
-
-    def _timeout_handler(signum, frame):
-        raise TimeoutError(f"AkShare fetch_stock_reports({stock_code}) timed out after {timeout}s")
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
     try:
         import akshare as ak
 
-        old_handler = signal.getsignal(signal.SIGALRM)
-        signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(timeout)
-        try:
-            df = ak.stock_research_report_em(symbol=stock_code)
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(ak.stock_research_report_em, symbol=stock_code)
+            try:
+                df = future.result(timeout=timeout)
+            except FuturesTimeoutError:
+                raise TimeoutError(f"AkShare fetch_stock_reports({stock_code}) timed out after {timeout}s")
         return parse_eastmoney_reports(stock_code, df)
     except TimeoutError as e:
         logger.warning("Timeout fetching reports for %s: %s", stock_code, e)
