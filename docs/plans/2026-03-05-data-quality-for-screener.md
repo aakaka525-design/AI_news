@@ -1,5 +1,8 @@
 # 选股系统数据质量修复 — 实施计划
 
+> **状态：部分完成**
+> 股东人数、北向持股、评分/telemetry/快照等多组 screener 测试已落地，但本计划覆盖面较广（14 个数据质量问题），尚未逐项回填完成度。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **目标:** 修复 14 个数据质量问题，使多因子选股系统的评分结果可靠、可操作。

@@ -1,5 +1,8 @@
 # Phase 4: 前端可视化 Implementation Plan
 
+> **状态：已完成**
+> Next.js 14 前端已建成，包含 Dashboard、新闻、市场、筛选、自选、设置等页面及 BFF 层，计划核心目标已达成。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 构建 Next.js 14 前端，提供 Dashboard、新闻、个股详情等页面，对接现有 FastAPI 后端 30+ API 端点。

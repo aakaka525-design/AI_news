@@ -1,5 +1,8 @@
 # Phase 3A：技术指标 + 趋势分析 实施计划
 
+> **状态：已完成**
+> `src/analysis/technical.py`、`src/analysis/trend_analysis.py` 及对应测试已落地，计划中的技术指标与趋势分析核心纯计算模块已全部实现。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **目标：** 补全缺失的技术指标计算（MACD/RSI/KDJ/布林带/ATR/OBV/EMA/威廉指标），增强趋势分析（趋势识别、支撑阻力、强度评分、多周期共振）。

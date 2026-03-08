@@ -1,5 +1,8 @@
 # Phase 3B: 研报解析增强 Implementation Plan
 
+> **状态：部分完成**
+> `src/ai_engine/report_parser.py` 及测试已存在并通过，但当前实现仍保留 `get_connection()` 直连痕迹，未完全达到计划中"repository 化"的目标。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Modernize the research report parsing pipeline with full test coverage, SQLAlchemy repository, LLM integration, and structured field population.

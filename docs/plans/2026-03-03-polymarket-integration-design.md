@@ -1,5 +1,8 @@
 # Polymarket 预测市场新闻信号源 — 实现计划
 
+> **状态：已完成**
+> `src/data_ingestion/polymarket/*`、调度注册、API 端点、前端页面及集成测试（`tests/test_polymarket_integration.py`）均已落地并通过。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 将 Polymarket 预测市场接入 AI 新闻平台，当市场概率大幅波动时自动生成 NewsFlash 进入 AI 分析管线。

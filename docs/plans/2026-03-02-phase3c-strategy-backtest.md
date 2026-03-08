@@ -1,5 +1,8 @@
 # Phase 3C: 策略增强 + 回测框架 Implementation Plan
 
+> **状态：已完成**
+> `src/analysis/backtest_engine.py`、`src/analysis/backtest_metrics.py`、`src/analysis/sector_rotation.py` 及对应测试均已落地并通过。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build a backtesting framework with performance metrics (Sharpe Ratio, max drawdown, CAGR), sector rotation detection, and reproducible strategy evaluation using existing stock data.
