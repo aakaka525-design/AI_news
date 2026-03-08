@@ -55,19 +55,18 @@ def _add_new_listing_exclusions(
             (today,),
         ).fetchall()
     except Exception:
-        # trading_calendar 可能不在 stocks.db 中，尝试其他方式
-        from fetchers.trading_calendar import get_recent_trading_days
+        # trading_calendar 表可能不在 stocks.db 中，使用 fetchers 模块
         cal_rows = None
-        recent_days = get_recent_trading_days(61)
+
+    if cal_rows is not None and len(cal_rows) >= 61:
+        cutoff_date = cal_rows[-1]["cal_date"]
+    else:
+        from fetchers.trading_calendar import get_prev_n_trading_days
+        recent_days = get_prev_n_trading_days(61)
         if len(recent_days) >= 61:
             cutoff_date = recent_days[-1]  # 60 个交易日前的日期
         else:
             return
-
-    if cal_rows is not None:
-        if len(cal_rows) < 61:
-            return
-        cutoff_date = cal_rows[-1]["cal_date"]
 
     # 将 cutoff_date 转换为 YYYYMMDD 格式以匹配 list_date
     cutoff_yyyymmdd = cutoff_date.replace("-", "")
