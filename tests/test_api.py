@@ -475,6 +475,31 @@ class TestIntradayEndpoint:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# GET /api/integrity/sources
+# ---------------------------------------------------------------------------
+
+
+class TestIntegritySourcesEndpoint:
+    def test_sources_returns_200(self, client):
+        resp = client.get("/api/integrity/sources")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sources" in data
+        assert isinstance(data["sources"], list)
+
+    def test_sources_empty_when_no_table(self, client):
+        """Graceful degradation when data_source_health table does not exist."""
+        resp = client.get("/api/integrity/sources")
+        assert resp.status_code == 200
+        assert resp.json()["sources"] == []
+
+
+# ---------------------------------------------------------------------------
+# CSV Export endpoints
+# ---------------------------------------------------------------------------
+
+
 class TestCsvExportEndpoints:
     def test_daily_export_invalid_ts_code_returns_422(self, client):
         resp = client.get("/api/stocks/INVALID/daily/export")

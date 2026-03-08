@@ -105,15 +105,24 @@ def save_trading_calendar(dates: list[str]) -> int:
     return count
 
 
+def clear_cache():
+    """清除缓存（供测试使用）。"""
+    global _trading_days_cache, _cache_date
+    with _cache_lock:
+        _trading_days_cache = None
+        _cache_date = None
+
+
 def load_trading_days() -> set[str]:
     """从数据库加载交易日（带缓存，线程安全）"""
     global _trading_days_cache, _cache_date
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 快速路径：缓存有效时无需加锁
-    if _trading_days_cache is not None and _cache_date == today:
-        return _trading_days_cache
+    # 快速路径：先读取局部引用，避免竞态下读到不一致的 pair
+    cache, cache_dt = _trading_days_cache, _cache_date
+    if cache is not None and cache_dt == today:
+        return cache
 
     with _cache_lock:
         # Double-check: 另一个线程可能已经刷新了缓存

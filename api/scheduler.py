@@ -175,45 +175,64 @@ class SchedulerManager:
             start_time=start_time,
             end_time=start_time
         )
-        
+        task_return = None
+
         try:
             func = self._task_funcs.get(task_id)
             if not func:
                 raise ValueError(f"任务 {task_id} 未注册执行函数")
-            
+
             logger.info(f"▶️ 开始执行任务: {task_id}")
-            
+
             # 执行任务（支持同步和异步函数），带超时保护
             task_timeout = 3600  # 1 小时超时
             if asyncio.iscoroutinefunction(func):
-                await asyncio.wait_for(func(), timeout=task_timeout)
+                task_return = await asyncio.wait_for(func(), timeout=task_timeout)
             else:
-                await asyncio.wait_for(
+                task_return = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(None, func),
                     timeout=task_timeout,
                 )
-            
+
             result.success = True
             result.message = "执行成功"
             logger.info(f"✅ 任务完成: {task_id}")
-            
+
         except Exception as e:
             result.error = str(e)
             result.message = f"执行失败: {e}"
             logger.error(f"❌ 任务失败: {task_id} - {e}")
-        
+
         finally:
             result.end_time = datetime.now()
-            
+
             # 记录历史
             if task_id not in self._task_history:
                 self._task_history[task_id] = []
             self._task_history[task_id].append(result)
-            
+
             # 只保留最近 20 条记录（避免内存膨胀）
             if len(self._task_history[task_id]) > 20:
                 self._task_history[task_id] = self._task_history[task_id][-20:]
-        
+
+            # Persist telemetry (best-effort, never fails the task)
+            try:
+                from src.telemetry.models import DatasetTelemetry, TaskExecutionTelemetry
+                from src.telemetry.recorder import record_telemetry
+
+                if isinstance(task_return, list) and task_return and isinstance(task_return[0], DatasetTelemetry):
+                    tel = TaskExecutionTelemetry(
+                        task_id=task_id,
+                        started_at=start_time,
+                        finished_at=result.end_time,
+                        success=result.success,
+                        error=result.error,
+                        datasets=task_return,
+                    )
+                    record_telemetry(tel)
+            except Exception as tel_err:
+                logger.warning(f"Telemetry recording failed for {task_id}: {tel_err}")
+
         return result
     
     def start(self):
@@ -332,19 +351,37 @@ def register_default_tasks():
     """注册默认任务"""
     import sys
     import os
-    
+
+    from src.telemetry.models import DatasetTelemetry
+
     # 添加项目根目录到路径
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    
-    # 注册 RSS 抓取任务
+
+    # ------------------------------------------------------------------
+    # RSS 抓取（async，带 telemetry）
+    # ------------------------------------------------------------------
     from rss_fetcher import run_rss_fetch
+
     async def rss_task():
-        await run_rss_fetch(include_rsshub=True)
+        items = await run_rss_fetch(include_rsshub=True)
+        count = len(items) if items else 0
+        return [
+            DatasetTelemetry(
+                source_key="rss",
+                dataset_key="rss_items",
+                db_name="news",
+                record_count=count,
+                status="ok" if count > 0 else "empty",
+            )
+        ]
+
     scheduler_manager.register_task("rss_fetch", rss_task)
-    
-    # 注册 AI 分析任务
+
+    # ------------------------------------------------------------------
+    # AI 分析（async，带 telemetry）
+    # ------------------------------------------------------------------
     from src.ai_engine.llm_analyzer import create_analyzer_from_env
     from src.ai_engine.sentiment import analyze_pending_news
     from rss_fetcher import get_recent_rss
@@ -354,6 +391,9 @@ def register_default_tasks():
     _ai_repo = _AINewsRepo(_ai_session)
 
     async def ai_task():
+        analysis_count = 0
+        sentiment_count = 0
+
         # 1. 热点分析
         analyzer = create_analyzer_from_env()
         if not analyzer:
@@ -361,14 +401,16 @@ def register_default_tasks():
         items = get_recent_rss(limit=20)
         if not items:
             logger.info("无可分析 RSS 数据，跳过本轮 AI 分析")
-            return
+            return [
+                DatasetTelemetry(source_key="ai", dataset_key="analysis", db_name="news", record_count=0, status="empty"),
+                DatasetTelemetry(source_key="ai", dataset_key="rss_sentiment", db_name="news", record_count=0, status="empty"),
+            ]
         payload = [
             {"id": r.get("id"), "title": r.get("title", ""), "content": r.get("summary", "")}
             for r in items
         ]
         analysis = await analyzer.analyze_opportunities(payload)
 
-        # 保存热点分析结果
         if "error" not in analysis:
             from datetime import datetime as _dt
             _ai_repo.insert_analysis(
@@ -377,33 +419,75 @@ def register_default_tasks():
                 analysis_summary=analysis.get("analysis_summary", ""),
                 opportunities=analysis.get("opportunities", []),
             )
-            logger.info(f"AI 热点分析完成，已保存 {len(analysis.get('opportunities', []))} 个机会")
+            analysis_count = len(analysis.get("opportunities", []))
+            logger.info(f"AI 热点分析完成，已保存 {analysis_count} 个机会")
         else:
             logger.warning(f"AI 热点分析返回错误: {analysis.get('error')}")
 
         # 2. 情感分析
         sentiment_result = await analyze_pending_news(_ai_repo)
+        if isinstance(sentiment_result, dict):
+            sentiment_count = sentiment_result.get("analyzed", 0)
         logger.info(f"情感分析: {sentiment_result}")
 
+        return [
+            DatasetTelemetry(source_key="ai", dataset_key="analysis", db_name="news", record_count=analysis_count),
+            DatasetTelemetry(source_key="ai", dataset_key="rss_sentiment", db_name="news", record_count=sentiment_count),
+        ]
+
     scheduler_manager.register_task("ai_analysis", ai_task)
-    
-    # 注册金融数据任务（同步函数）
+
+    # ------------------------------------------------------------------
+    # 技术指标（直接 import，替代 subprocess）
+    # ------------------------------------------------------------------
+    from scripts.fetch_history import run_stock_indicators
+
     def indicators_task():
-        import subprocess
-        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_history.py"], check=True, timeout=300)
+        results = run_stock_indicators()
+        return [
+            DatasetTelemetry(
+                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
+            )
+            for r in results
+        ]
+
     scheduler_manager.register_task("stock_indicators", indicators_task)
 
+    # ------------------------------------------------------------------
+    # 资金流向（直接 import，替代 subprocess）
+    # ------------------------------------------------------------------
+    from src.data_ingestion.tushare.moneyflow import run_fund_flow
+
     def fund_flow_task():
-        import subprocess
-        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_main_money.py"], check=True, timeout=300)
+        results = run_fund_flow()
+        return [
+            DatasetTelemetry(
+                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
+            )
+            for r in results
+        ]
+
     scheduler_manager.register_task("fund_flow", fund_flow_task)
 
+    # ------------------------------------------------------------------
+    # 宏观数据（直接 import，替代 subprocess）
+    # ------------------------------------------------------------------
+    from scripts.fetch_advanced_data import run_macro_data
+
     def macro_task():
-        import subprocess
-        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_advanced_data.py"], check=True, timeout=300)
+        results = run_macro_data()
+        return [
+            DatasetTelemetry(
+                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
+            )
+            for r in results
+        ]
+
     scheduler_manager.register_task("macro_data", macro_task)
-    
-    # 注册 Polymarket 预测市场任务
+
+    # ------------------------------------------------------------------
+    # Polymarket 预测市场
+    # ------------------------------------------------------------------
     if POLYMARKET_ENABLED:
         from src.data_ingestion.polymarket.fetcher import PolymarketFetcher
         from src.data_ingestion.polymarket.models import PolymarketBase
@@ -421,15 +505,25 @@ def register_default_tasks():
 
         scheduler_manager.register_task("polymarket_fetch", polymarket_task)
 
-    # 注册筛选器日快照任务
+    # ------------------------------------------------------------------
+    # 筛选器日快照（带 telemetry）
+    # ------------------------------------------------------------------
     from src.strategies.snapshot_service import run_daily_snapshots
 
     def screen_snapshot_task():
-        run_daily_snapshots()
+        result = run_daily_snapshots()
+        rps_count = result.get("rps", 0) if isinstance(result, dict) else 0
+        potential_count = result.get("potential", 0) if isinstance(result, dict) else 0
+        return [
+            DatasetTelemetry(source_key="akshare", dataset_key="screen_rps", db_name="stocks", record_count=rps_count),
+            DatasetTelemetry(source_key="akshare", dataset_key="screen_potential", db_name="stocks", record_count=potential_count),
+        ]
 
     scheduler_manager.register_task("screen_snapshot", screen_snapshot_task)
 
-    # 注册盘中快照轮询任务
+    # ------------------------------------------------------------------
+    # 盘中快照轮询
+    # ------------------------------------------------------------------
     from fetchers.intraday import fetch_intraday_snapshot
 
     def intraday_task():

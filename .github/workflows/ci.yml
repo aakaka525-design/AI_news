@@ -24,6 +24,9 @@ jobs:
           python -m py_compile src/utils/cache.py
           python -m py_compile src/utils/search.py
           python -m py_compile fetchers/intraday.py
+          python -m py_compile src/telemetry/__init__.py
+          python -m py_compile src/telemetry/models.py
+          python -m py_compile src/telemetry/recorder.py
       - name: Run tests
         run: pytest tests/ -v --tb=short -x || true
       - name: Check response_model coverage

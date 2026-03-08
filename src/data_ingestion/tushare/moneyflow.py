@@ -258,27 +258,38 @@ def fetch_moneyflow_range(start_date: str, end_date: str = None) -> int:
 # 主函数
 # ============================================================
 
-def main():
+def run_fund_flow() -> list[dict]:
+    """可 import 的入口函数，返回各 dataset 统计。"""
     log("=" * 50)
     log("Tushare 资金流向抓取")
     log("=" * 50)
-    
+
     init_tables()
     client = get_tushare_client()
-    
-    # 抓取最近 5 天
+
     end_date = datetime.now().strftime('%Y%m%d')
     start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-    
+
     trading_days = client.get_trading_days(start_date=start_date, end_date=end_date)
-    
+
+    moneyflow_total = 0
+    hsgt_total = 0
     for trade_date in trading_days[-5:]:
-        fetch_moneyflow_by_date(trade_date, client)
-        fetch_hsgt_top10_by_date(trade_date, client)
-    
+        moneyflow_total += fetch_moneyflow_by_date(trade_date, client)
+        hsgt_total += fetch_hsgt_top10_by_date(trade_date, client)
+
     stats = client.get_stats()
     log(f"\n📊 请求统计: {stats['total_requests']} 次, {stats['requests_per_minute']:.1f}/分钟")
     log("\n✅ 完成!")
+
+    return [
+        {"dataset": "ts_moneyflow", "count": moneyflow_total},
+        {"dataset": "ts_hsgt_top10", "count": hsgt_total},
+    ]
+
+
+def main():
+    run_fund_flow()
 
 
 if __name__ == "__main__":

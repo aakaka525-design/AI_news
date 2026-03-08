@@ -323,38 +323,44 @@ def fetch_daily_history(client: TushareAdapter, start_date: str, end_date: str):
 # 主函数
 # ============================================================
 
-def main():
+def run_stock_indicators() -> list[dict]:
+    """可 import 的入口函数，返回各 dataset 统计。"""
     log("=" * 60)
     log("历史数据补充")
     log("=" * 60)
-    
+
     init_tables()
     client = get_tushare_client()
-    
-    # 时间范围
+
     end_date = datetime.now().strftime('%Y%m%d')
-    daily_start = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')  # 1年
-    weekly_start = (datetime.now() - timedelta(days=365*3)).strftime('%Y%m%d')  # 3年
-    
+    daily_start = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+    weekly_start = (datetime.now() - timedelta(days=365 * 3)).strftime('%Y%m%d')
+
     log(f"\n📅 日线范围: {daily_start} ~ {end_date}")
     log(f"📅 周线范围: {weekly_start} ~ {end_date}")
-    
-    # 1. 补充日线
+
     log("\n" + "=" * 40)
-    fetch_daily_history(client, daily_start, end_date)
-    
-    # 2. 抓取周线
+    daily_count = fetch_daily_history(client, daily_start, end_date)
+
     log("\n" + "=" * 40)
-    fetch_weekly_data(client, weekly_start, end_date)
-    
-    # 3. 抓取周度估值
+    weekly_count = fetch_weekly_data(client, weekly_start, end_date)
+
     log("\n" + "=" * 40)
-    fetch_weekly_valuation(client, weekly_start, end_date)
-    
-    # 统计
+    valuation_count = fetch_weekly_valuation(client, weekly_start, end_date)
+
     stats = client.get_stats()
     log(f"\n📊 API 统计: {stats['total_requests']} 次, {stats['elapsed_seconds']:.0f}s")
     log("\n✅ 历史数据补充完成!")
+
+    return [
+        {"dataset": "ts_daily", "count": daily_count},
+        {"dataset": "ts_weekly", "count": weekly_count},
+        {"dataset": "ts_weekly_valuation", "count": valuation_count},
+    ]
+
+
+def main():
+    run_stock_indicators()
 
 
 if __name__ == "__main__":

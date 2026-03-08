@@ -925,6 +925,52 @@ async def check_data_freshness():
         _raise_internal_error("freshness check failed", e)
 
 
+@app.get("/api/integrity/sources")
+async def get_data_source_health():
+    """返回所有数据源最新健康状态（来自 telemetry）"""
+    def _query():
+        from src.database.connection import get_connection
+        conn = get_connection()
+        try:
+            # 表不存在时友好降级
+            try:
+                cursor = conn.execute(
+                    "SELECT source_key, dataset_key, db_name, task_id, "
+                    "record_count, latest_record_date, status, error_message, "
+                    "started_at, finished_at, duration_seconds, created_at "
+                    "FROM data_source_health ORDER BY source_key, dataset_key"
+                )
+                rows = cursor.fetchall()
+            except Exception:
+                return []
+
+            return [
+                {
+                    "source_key": r["source_key"],
+                    "dataset_key": r["dataset_key"],
+                    "db_name": r["db_name"],
+                    "task_id": r["task_id"],
+                    "record_count": r["record_count"],
+                    "latest_record_date": r["latest_record_date"],
+                    "status": r["status"],
+                    "error_message": r["error_message"],
+                    "started_at": r["started_at"],
+                    "finished_at": r["finished_at"],
+                    "duration_seconds": r["duration_seconds"],
+                    "created_at": r["created_at"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    try:
+        sources = await run_in_threadpool(_query)
+        return {"sources": sources}
+    except Exception as e:
+        _raise_internal_error("source health query failed", e)
+
+
 # ============================================================
 # 交易日历 API
 # ============================================================

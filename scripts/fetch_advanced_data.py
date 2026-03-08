@@ -378,5 +378,49 @@ class AdvancedFetcher:
 
         log("\n✅ 所有高级数据抓取完成!")
 
+def run_macro_data() -> list[dict]:
+    """可 import 的入口函数，返回各 dataset 统计。"""
+    fetcher = AdvancedFetcher()
+
+    # Collect counts via wrapper
+    conn = get_connection()
+    try:
+        def _count(table: str) -> int:
+            try:
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                return row[0] if row else 0
+            except Exception:
+                return 0
+
+        before = {
+            "ts_daily_basic": _count("ts_daily_basic"),
+            "ts_hk_hold": _count("ts_hk_hold"),
+            "ts_top10_holders": _count("ts_top10_holders"),
+            "ts_cyq_perf": _count("ts_cyq_perf"),
+        }
+    finally:
+        conn.close()
+
+    fetcher.run()
+
+    conn = get_connection()
+    try:
+        def _count_after(table: str) -> int:
+            try:
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                return row[0] if row else 0
+            except Exception:
+                return 0
+
+        return [
+            {"dataset": "ts_daily_basic", "count": _count_after("ts_daily_basic") - before["ts_daily_basic"]},
+            {"dataset": "ts_hk_hold", "count": _count_after("ts_hk_hold") - before["ts_hk_hold"]},
+            {"dataset": "ts_top10_holders", "count": _count_after("ts_top10_holders") - before["ts_top10_holders"]},
+            {"dataset": "ts_cyq_perf", "count": _count_after("ts_cyq_perf") - before["ts_cyq_perf"]},
+        ]
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
-    AdvancedFetcher().run()
+    run_macro_data()
