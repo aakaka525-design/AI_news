@@ -1232,12 +1232,16 @@ async def get_intraday(ts_code: str = FastPath(..., pattern=r'^\d{6}\.[A-Z]{2}$'
             "ts_code": row[0], "price": row[1], "change_pct": row[2],
             "volume": row[3], "amount": row[4], "update_time": str(row[5]),
         }
-    except Exception:
-        # 表可能不存在（首次运行前）
-        return {
-            "ts_code": ts_code, "price": None, "change_pct": None,
-            "volume": None, "amount": None, "update_time": None,
-        }
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "no such table" in err_msg or "does not exist" in err_msg:
+            # 表尚未创建（首次运行前），返回空快照
+            return {
+                "ts_code": ts_code, "price": None, "change_pct": None,
+                "volume": None, "amount": None, "update_time": None,
+            }
+        logger.error("intraday query error for %s: %s", ts_code, e)
+        raise HTTPException(status_code=500, detail="Failed to query intraday data")
     finally:
         conn.close()
 

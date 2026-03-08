@@ -15,10 +15,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-// Mock fetchStocks from api
-const mockFetchStocks = vi.fn();
+// Mock fetchSearch from api
+const mockFetchSearch = vi.fn();
 vi.mock("@/lib/api", () => ({
-  fetchStocks: (...args: unknown[]) => mockFetchStocks(...args),
+  fetchSearch: (...args: unknown[]) => mockFetchSearch(...args),
 }));
 
 // Mock useDebounce to return value immediately (no delay)
@@ -26,26 +26,32 @@ vi.mock("@/lib/use-debounce", () => ({
   useDebounce: <T,>(value: T, _delay: number): T => value,
 }));
 
-const mockResults = [
+const mockStocks = [
   {
     ts_code: "000001.SZ",
-    symbol: "000001",
     name: "平安银行",
     industry: "银行",
   },
   {
     ts_code: "600036.SH",
-    symbol: "600036",
     name: "招商银行",
     industry: "银行",
+  },
+];
+
+const mockNews = [
+  {
+    id: 1,
+    title: "银行板块大涨",
+    received_at: "2026-03-08T10:00:00",
   },
 ];
 
 describe("StockSearch", () => {
   beforeEach(() => {
     mockPush.mockClear();
-    mockFetchStocks.mockClear();
-    mockFetchStocks.mockResolvedValue({ data: [], total: 0 });
+    mockFetchSearch.mockClear();
+    mockFetchSearch.mockResolvedValue({ stocks: [], news: [] });
   });
 
   afterEach(() => {
@@ -54,7 +60,7 @@ describe("StockSearch", () => {
 
   it("renders search input", () => {
     render(<StockSearch />);
-    const input = screen.getByPlaceholderText("搜索股票代码/名称...");
+    const input = screen.getByPlaceholderText("搜索股票/新闻...");
     expect(input).toBeDefined();
   });
 
@@ -64,8 +70,8 @@ describe("StockSearch", () => {
     expect(input).toBeDefined();
   });
 
-  it("calls fetchStocks on input change", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+  it("calls fetchSearch on input change", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -75,12 +81,12 @@ describe("StockSearch", () => {
     });
 
     await waitFor(() => {
-      expect(mockFetchStocks).toHaveBeenCalledWith(1, 8, "银行");
+      expect(mockFetchSearch).toHaveBeenCalledWith("银行", "all", 10);
     });
   });
 
-  it("displays search results in dropdown", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+  it("displays stock results in dropdown", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -95,8 +101,8 @@ describe("StockSearch", () => {
     });
   });
 
-  it("displays ts_code in results", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+  it("displays ts_code in stock results", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -111,8 +117,45 @@ describe("StockSearch", () => {
     });
   });
 
-  it("navigates to stock page on result click", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+  it("displays news results in dropdown", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: [], news: mockNews });
+
+    render(<StockSearch />);
+    const input = screen.getByRole("combobox");
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "银行" } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("银行板块大涨")).toBeDefined();
+    });
+  });
+
+  it("displays grouped sections (stocks + news)", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: mockNews });
+
+    render(<StockSearch />);
+    const input = screen.getByRole("combobox");
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "银行" } });
+    });
+
+    await waitFor(() => {
+      // Stock section header
+      expect(screen.getByText("股票")).toBeDefined();
+      // News section header contains text "新闻"
+      expect(screen.getByText("新闻")).toBeDefined();
+      // Stock items
+      expect(screen.getByText("平安银行")).toBeDefined();
+      // News items
+      expect(screen.getByText("银行板块大涨")).toBeDefined();
+    });
+  });
+
+  it("navigates to stock page on stock result click", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -130,6 +173,25 @@ describe("StockSearch", () => {
     expect(mockPush).toHaveBeenCalledWith("/market/000001.SZ");
   });
 
+  it("navigates to news page on news result click", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: [], news: mockNews });
+
+    render(<StockSearch />);
+    const input = screen.getByRole("combobox");
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "银行" } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("银行板块大涨")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByText("银行板块大涨"));
+
+    expect(mockPush).toHaveBeenCalledWith("/news?highlight=1");
+  });
+
   it("does not fetch when query is empty", async () => {
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -138,11 +200,11 @@ describe("StockSearch", () => {
       fireEvent.change(input, { target: { value: "" } });
     });
 
-    expect(mockFetchStocks).not.toHaveBeenCalled();
+    expect(mockFetchSearch).not.toHaveBeenCalled();
   });
 
   it("does not show dropdown when no results", async () => {
-    mockFetchStocks.mockResolvedValue({ data: [], total: 0 });
+    mockFetchSearch.mockResolvedValue({ stocks: [], news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -152,14 +214,14 @@ describe("StockSearch", () => {
     });
 
     await waitFor(() => {
-      expect(mockFetchStocks).toHaveBeenCalled();
+      expect(mockFetchSearch).toHaveBeenCalled();
     });
 
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
   it("shows listbox with options when results exist", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -176,8 +238,25 @@ describe("StockSearch", () => {
     });
   });
 
+  it("shows correct option count with stocks + news", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: mockNews });
+
+    render(<StockSearch />);
+    const input = screen.getByRole("combobox");
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "银行" } });
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      // 2 stocks + 1 news = 3 options
+      expect(options).toHaveLength(3);
+    });
+  });
+
   it("handles keyboard navigation with ArrowDown", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -197,8 +276,8 @@ describe("StockSearch", () => {
     expect(options[0].getAttribute("aria-selected")).toBe("true");
   });
 
-  it("handles Enter key to select item", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+  it("handles Enter key to select stock item", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");
@@ -218,8 +297,28 @@ describe("StockSearch", () => {
     expect(mockPush).toHaveBeenCalledWith("/market/000001.SZ");
   });
 
+  it("handles Enter key to select news item", async () => {
+    mockFetchSearch.mockResolvedValue({ stocks: [], news: mockNews });
+
+    render(<StockSearch />);
+    const input = screen.getByRole("combobox");
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "银行" } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("listbox")).toBeDefined();
+    });
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(mockPush).toHaveBeenCalledWith("/news?highlight=1");
+  });
+
   it("closes dropdown on Escape key", async () => {
-    mockFetchStocks.mockResolvedValue({ data: mockResults, total: 2 });
+    mockFetchSearch.mockResolvedValue({ stocks: mockStocks, news: [] });
 
     render(<StockSearch />);
     const input = screen.getByRole("combobox");

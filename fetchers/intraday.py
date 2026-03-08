@@ -2,7 +2,7 @@
 
 股票池: RPS Top 30 ∪ Potential Top 20 → 去重后 ≤50 只
 频率: 交易日 9:30-15:00 每 10 分钟
-熔断: 连续 5 次失败暂停 30 分钟
+熔断: 连续 5 次失败后暂停，需手动调用 reset_circuit_breaker() 恢复
 """
 
 import logging

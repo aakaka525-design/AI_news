@@ -24,9 +24,7 @@ class CacheService:
             logger.debug("cache_hit key=%s", key)
         return val
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        # cachetools TTLCache uses a single TTL; per-key TTL not supported.
-        # For per-key TTL, swap to Redis backend.
+    def set(self, key: str, value: Any) -> None:
         self._cache[key] = value
 
     def invalidate(self, key: str) -> bool:
