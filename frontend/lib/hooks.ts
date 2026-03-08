@@ -33,6 +33,8 @@ import {
   fetchPolymarketMarkets,
   fetchPolymarketMarketDetail,
   fetchPolymarketHistory,
+  fetchScreenRps,
+  fetchScreenPotential,
 } from "./api";
 
 export const useHealth = () =>
@@ -215,4 +217,18 @@ export const usePolymarketHistory = (conditionId: string | null, limit = 100) =>
     queryFn: () => fetchPolymarketHistory(conditionId!, limit),
     enabled: conditionId !== null,
     staleTime: 5 * 60 * 1000,
+  });
+
+// ===== Screener =====
+
+export const useScreenRps = (date?: string, limit?: number) =>
+  useQuery({
+    queryKey: ["screen-rps", date, limit],
+    queryFn: () => fetchScreenRps(date, limit),
+  });
+
+export const useScreenPotential = (date?: string, limit?: number) =>
+  useQuery({
+    queryKey: ["screen-potential", date, limit],
+    queryFn: () => fetchScreenPotential(date, limit),
   });

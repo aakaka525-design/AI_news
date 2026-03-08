@@ -4,6 +4,7 @@ import {
   Wallet,
   Trophy,
   Grid3X3,
+  Filter,
   Newspaper,
   Target,
   AlertTriangle,
@@ -34,6 +35,7 @@ export const navGroups: NavGroup[] = [
       { href: "/flow", label: "资金流向", icon: Wallet },
       { href: "/dragon", label: "龙虎榜", icon: Trophy },
       { href: "/sector", label: "板块行情", icon: Grid3X3 },
+      { href: "/screens", label: "筛选", icon: Filter },
     ],
   },
   {

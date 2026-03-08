@@ -636,6 +636,98 @@ class TsTop10Holders(Base, TimestampMixin, TsCodeMixin):
 
 
 # ============================================================
+# Snapshot: 筛选器/分析快照 (产品化)
+# ============================================================
+
+class ScreenRpsSnapshot(Base, TimestampMixin):
+    """
+    RPS 强度排名日快照
+
+    生成频率: 每日 17:15 (收盘数据入库后)
+    保留期: 60 个交易日
+    数据源: src/strategies/rps_screener.py
+    """
+    __tablename__ = 'screen_rps_snapshot'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    snapshot_date = Column(Date, nullable=False, comment="快照生成日期")
+    source_trade_date = Column(Date, nullable=False, comment="数据基于的最新交易日")
+    generated_at = Column(DateTime, nullable=False, comment="实际生成时间")
+    generator_version = Column(String(16), nullable=False, default="v1.0", comment="生成器版本")
+    ts_code = Column(String(12), nullable=False, comment="股票代码")
+    stock_name = Column(String(50), comment="股票名称")
+    rps_10 = Column(Numeric(8, 4), comment="10日 RPS")
+    rps_20 = Column(Numeric(8, 4), comment="20日 RPS")
+    rps_50 = Column(Numeric(8, 4), comment="50日 RPS")
+    rps_120 = Column(Numeric(8, 4), comment="120日 RPS")
+    rank = Column(Integer, comment="综合排名")
+
+    __table_args__ = (
+        UniqueConstraint('snapshot_date', 'ts_code', name='uq_screen_rps_snapshot'),
+        Index('ix_screen_rps_date_rank', 'snapshot_date', 'rank'),
+        {'comment': 'RPS 筛选日快照表'}
+    )
+
+
+class ScreenPotentialSnapshot(Base, TimestampMixin):
+    """
+    多因子潜力股筛选日快照
+
+    生成频率: 每日 17:15
+    保留期: 60 个交易日
+    数据源: src/strategies/potential_screener.py
+    """
+    __tablename__ = 'screen_potential_snapshot'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    snapshot_date = Column(Date, nullable=False, comment="快照生成日期")
+    source_trade_date = Column(Date, nullable=False, comment="数据基于的最新交易日")
+    generated_at = Column(DateTime, nullable=False, comment="实际生成时间")
+    generator_version = Column(String(16), nullable=False, default="v1.0", comment="生成器版本")
+    ts_code = Column(String(12), nullable=False, comment="股票代码")
+    stock_name = Column(String(50), comment="股票名称")
+    total_score = Column(Numeric(8, 4), comment="总分 (满分100)")
+    capital_score = Column(Numeric(8, 4), comment="资金面得分 (满分30)")
+    trading_score = Column(Numeric(8, 4), comment="交易面得分 (满分25)")
+    fundamental_score = Column(Numeric(8, 4), comment="基本面得分 (满分20)")
+    technical_score = Column(Numeric(8, 4), comment="技术面得分 (满分25)")
+    signals = Column(Text, comment="信号标签 JSON (如 [\"MACD金叉\", \"量价齐升\"])")
+    rank = Column(Integer, comment="综合排名")
+
+    __table_args__ = (
+        UniqueConstraint('snapshot_date', 'ts_code', name='uq_screen_potential_snapshot'),
+        Index('ix_screen_potential_date_rank', 'snapshot_date', 'rank'),
+        {'comment': '潜力筛选日快照表'}
+    )
+
+
+class AnalysisFullSnapshot(Base, TimestampMixin):
+    """
+    个股完整分析快照
+
+    生成频率: 每日预计算 30-40 只热门股 + 按需懒生成
+    保留期: 14 天
+    数据源: src/strategies/full_analysis.py
+    """
+    __tablename__ = 'analysis_full_snapshot'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    snapshot_date = Column(Date, nullable=False, comment="快照生成日期")
+    source_trade_date = Column(Date, nullable=False, comment="数据基于的最新交易日")
+    generated_at = Column(DateTime, nullable=False, comment="实际生成时间")
+    generator_version = Column(String(16), nullable=False, default="v1.0", comment="生成器版本")
+    ts_code = Column(String(12), nullable=False, comment="股票代码")
+    stock_name = Column(String(50), comment="股票名称")
+    analysis_json = Column(Text, nullable=False, comment="完整分析结果 JSON")
+
+    __table_args__ = (
+        UniqueConstraint('snapshot_date', 'ts_code', name='uq_analysis_full_snapshot'),
+        Index('ix_analysis_full_date', 'snapshot_date'),
+        {'comment': '个股完整分析快照表'}
+    )
+
+
+# ============================================================
 # Upsert Helper (幂等性保证)
 # ============================================================
 

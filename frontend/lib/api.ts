@@ -17,6 +17,8 @@ import type {
   ResearchReportsResponse,
   RssResponse,
   SchedulerJobsResponse,
+  ScreenPotentialResponse,
+  ScreenRpsResponse,
   SectorResponse,
   SentimentStats,
   StockDailyResponse,
@@ -322,3 +324,17 @@ export const fetchPolymarketHistory = (conditionId: string, limit = 100) =>
     `/api/polymarket/markets/${conditionId}/history`,
     { limit: String(limit) },
   );
+
+// ===== Screener =====
+
+export const fetchScreenRps = (date?: string, limit?: number) =>
+  fetchApi<ScreenRpsResponse>("/api/screens/rps", {
+    ...(date ? { date } : {}),
+    ...(limit ? { limit: String(limit) } : {}),
+  });
+
+export const fetchScreenPotential = (date?: string, limit?: number) =>
+  fetchApi<ScreenPotentialResponse>("/api/screens/potential", {
+    ...(date ? { date } : {}),
+    ...(limit ? { limit: String(limit) } : {}),
+  });

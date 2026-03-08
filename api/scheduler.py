@@ -75,6 +75,15 @@ TASK_CONFIGS = {
         "enabled": None,  # Filled at import time from settings
         "description": "从 Polymarket 拉取预测市场数据，检测概率波动"
     },
+    "screen_snapshot": {
+        "name": "筛选器日快照生成",
+        "trigger": "cron",
+        "hour": 17,
+        "minute": 15,
+        "day_of_week": "mon-fri",
+        "enabled": True,
+        "description": "生成 RPS/潜力筛选日快照，清理过期数据"
+    },
 }
 
 # Fill Polymarket config from centralized settings
@@ -404,5 +413,13 @@ def register_default_tasks():
             pm_fetcher.run()
 
         scheduler_manager.register_task("polymarket_fetch", polymarket_task)
+
+    # 注册筛选器日快照任务
+    from src.strategies.snapshot_service import run_daily_snapshots
+
+    def screen_snapshot_task():
+        run_daily_snapshots()
+
+    scheduler_manager.register_task("screen_snapshot", screen_snapshot_task)
 
     logger.info("✅ 默认任务注册完成")

@@ -32,7 +32,17 @@ import bleach
 import markdown
 
 # 导入响应模型
-from api.schemas import HealthResponse, NewsListResponse, WebhookResponse
+from api.schemas import (
+    HealthResponse,
+    NewsListResponse,
+    WebhookResponse,
+    StockListResponse,
+    StockProfileResponse,
+    StockDailyResponse,
+    MarketOverviewResponse,
+    ScreenRpsResponse,
+    ScreenPotentialResponse,
+)
 
 # 导入数据清洗模块
 from src.analysis.cleaner import clean_raw_data, clean_and_export, CleanedData
@@ -921,11 +931,115 @@ async def is_trading_day(date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2
 
 
 # ============================================================
+# 筛选器快照 API
+# ============================================================
+
+
+@app.get("/api/screens/rps", response_model=ScreenRpsResponse)
+async def get_screen_rps(
+    date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """获取 RPS 强度排名快照"""
+    from src.strategies.snapshot_service import ensure_snapshot_tables
+    ensure_snapshot_tables()
+
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        if date:
+            row = conn.execute(
+                "SELECT snapshot_date, source_trade_date, generated_at FROM screen_rps_snapshot WHERE snapshot_date = ? LIMIT 1",
+                (date,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT snapshot_date, source_trade_date, generated_at FROM screen_rps_snapshot ORDER BY snapshot_date DESC LIMIT 1"
+            ).fetchone()
+
+        if not row:
+            return {"snapshot_date": "", "source_trade_date": "", "generated_at": "", "total": 0, "items": []}
+
+        snap_date = row["snapshot_date"] if isinstance(row, dict) else row[0]
+        source_date = row["source_trade_date"] if isinstance(row, dict) else row[1]
+        gen_at = row["generated_at"] if isinstance(row, dict) else row[2]
+
+        items = conn.execute(
+            "SELECT ts_code, stock_name, rps_10, rps_20, rps_50, rps_120, rank FROM screen_rps_snapshot WHERE snapshot_date = ? ORDER BY rank ASC LIMIT ?",
+            (snap_date, limit)
+        ).fetchall()
+
+        return {
+            "snapshot_date": str(snap_date),
+            "source_trade_date": str(source_date),
+            "generated_at": str(gen_at),
+            "total": len(items),
+            "items": [dict(r) if isinstance(r, dict) else {
+                "ts_code": r[0], "stock_name": r[1],
+                "rps_10": r[2], "rps_20": r[3], "rps_50": r[4], "rps_120": r[5],
+                "rank": r[6]
+            } for r in items]
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/screens/potential", response_model=ScreenPotentialResponse)
+async def get_screen_potential(
+    date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    limit: int = Query(20, ge=1, le=200),
+):
+    """获取多因子潜力股筛选快照"""
+    from src.strategies.snapshot_service import ensure_snapshot_tables
+    ensure_snapshot_tables()
+
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        if date:
+            row = conn.execute(
+                "SELECT snapshot_date, source_trade_date, generated_at FROM screen_potential_snapshot WHERE snapshot_date = ? LIMIT 1",
+                (date,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT snapshot_date, source_trade_date, generated_at FROM screen_potential_snapshot ORDER BY snapshot_date DESC LIMIT 1"
+            ).fetchone()
+
+        if not row:
+            return {"snapshot_date": "", "source_trade_date": "", "generated_at": "", "total": 0, "items": []}
+
+        snap_date = row["snapshot_date"] if isinstance(row, dict) else row[0]
+        source_date = row["source_trade_date"] if isinstance(row, dict) else row[1]
+        gen_at = row["generated_at"] if isinstance(row, dict) else row[2]
+
+        items = conn.execute(
+            "SELECT ts_code, stock_name, total_score, capital_score, trading_score, fundamental_score, technical_score, signals, rank FROM screen_potential_snapshot WHERE snapshot_date = ? ORDER BY rank ASC LIMIT ?",
+            (snap_date, limit)
+        ).fetchall()
+
+        return {
+            "snapshot_date": str(snap_date),
+            "source_trade_date": str(source_date),
+            "generated_at": str(gen_at),
+            "total": len(items),
+            "items": [dict(r) if isinstance(r, dict) else {
+                "ts_code": r[0], "stock_name": r[1],
+                "total_score": r[2], "capital_score": r[3],
+                "trading_score": r[4], "fundamental_score": r[5],
+                "technical_score": r[6], "signals": r[7], "rank": r[8]
+            } for r in items]
+        }
+    finally:
+        conn.close()
+
+
+# ============================================================
 # 股票行情 API (stocks.db — 只读)
 # ============================================================
 
 
-@app.get("/api/stocks")
+@app.get("/api/stocks", response_model=StockListResponse)
 async def get_stocks(
     search: Optional[str] = None,
     industry: Optional[str] = None,
@@ -949,7 +1063,7 @@ async def get_stock_industries():
     return {"data": industries}
 
 
-@app.get("/api/stocks/{ts_code}/profile")
+@app.get("/api/stocks/{ts_code}/profile", response_model=StockProfileResponse)
 async def get_stock_profile(ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$')):
     """个股档案 + 估值指标"""
     profile = await run_in_threadpool(_stock_repo.get_stock_profile, ts_code)
@@ -970,7 +1084,7 @@ async def get_valuation_history(
     return {"data": data}
 
 
-@app.get("/api/stocks/{ts_code}/daily")
+@app.get("/api/stocks/{ts_code}/daily", response_model=StockDailyResponse)
 async def get_stock_daily(
     ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
     start_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
@@ -984,7 +1098,7 @@ async def get_stock_daily(
     return {"data": data}
 
 
-@app.get("/api/market/overview")
+@app.get("/api/market/overview", response_model=MarketOverviewResponse)
 async def get_market_overview(trade_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$')):
     """大盘指数概览"""
     data = await run_in_threadpool(_stock_repo.get_market_overview, trade_date)

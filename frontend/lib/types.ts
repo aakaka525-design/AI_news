@@ -350,3 +350,42 @@ export interface PolymarketHistoryResponse {
   total: number;
   data: PolymarketSnapshot[];
 }
+
+// ===== Screener =====
+export interface ScreenRpsItem {
+  ts_code: string;
+  stock_name: string | null;
+  rps_10: number | null;
+  rps_20: number | null;
+  rps_50: number | null;
+  rps_120: number | null;
+  rank: number | null;
+}
+
+export interface ScreenRpsResponse {
+  snapshot_date: string;
+  source_trade_date: string;
+  generated_at: string;
+  total: number;
+  items: ScreenRpsItem[];
+}
+
+export interface ScreenPotentialItem {
+  ts_code: string;
+  stock_name: string | null;
+  total_score: number | null;
+  capital_score: number | null;
+  trading_score: number | null;
+  fundamental_score: number | null;
+  technical_score: number | null;
+  signals: string | null;
+  rank: number | null;
+}
+
+export interface ScreenPotentialResponse {
+  snapshot_date: string;
+  source_trade_date: string;
+  generated_at: string;
+  total: number;
+  items: ScreenPotentialItem[];
+}
