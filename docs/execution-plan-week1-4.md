@@ -284,7 +284,7 @@ cache = MemoryCacheService(maxsize=1024, default_ttl=300)
 ```python
 def generate_full_analysis_snapshots() -> int:
     """预计算热门股票的完整分析。
-    集合 = RPS Top 20 ∪ Potential Top 20 ∪ 首页展示股 → 去重后 30-40 只。
+    集合 = RPS Top 20 ∪ Potential Top 20 ∪ 涨跌幅榜 Top 10 → 去重后 30-40 只。
     结果写入 analysis_full_snapshot。
     """
 
@@ -404,11 +404,15 @@ class SearchService(ABC):
     def search_news(self, query: str, limit: int = 50) -> list: ...
 
 class SqliteSearchService(SearchService):
-    """FTS5 实现（simple tokenizer）"""
+    """FTS5 实现。tokenizer 选型需用中文样本验证效果后确定。"""
 
 class PostgresSearchService(SearchService):
     """tsvector + GIN 实现"""
 ```
+
+**搜索实现分层**：
+1. **能力目标**（必须达成）：股票代码精确匹配 + 股票名称可靠模糊匹配 + 新闻标题/摘要关键词搜索
+2. **实现验证**（需实测）：FTS5 中文搜索效果需用真实新闻样本验证召回率和排序质量。若 `simple tokenizer` 效果不稳定，阶段 1 可先用标题/摘要 `LIKE` 匹配作为保守方案，不阻塞搜索功能上线
 
 #### 3.3 搜索 API 端点
 
@@ -431,7 +435,7 @@ GET /api/search
 
 #### 3.5 个股页 AI 综合分析展示
 
-**文件**: `frontend/app/stocks/[code]/page.tsx`（或对应个股详情页）
+**文件**: `frontend/app/market/[code]/page.tsx`（或对应个股详情页）
 
 - 新增"AI 综合分析"标签页/卡片
 - 读取 `GET /api/analysis/full/{ts_code}` 快照数据
@@ -478,7 +482,7 @@ GET /api/screens/potential/export
 | `src/utils/search.py` | 新建 |
 | `api/main.py` | 新增搜索 + 导出端点 |
 | `frontend/components/layout/stock-search.tsx` | 增强搜索 |
-| `frontend/app/stocks/[code]/page.tsx` | 新增分析展示 |
+| `frontend/app/market/[code]/page.tsx` | 新增分析展示 |
 | `.github/workflows/ci.yml` | 新增契约测试步骤 |
 
 ### 测试策略
@@ -540,13 +544,30 @@ def fetch_intraday_snapshot():
 
 #### 4.3 SQLite WAL 配置
 
-**文件**: `src/database/engine.py`
+**文件**: `src/database/connection.py`（主落点）+ `src/database/engine.py`（SQLAlchemy 层）
 
+注意：项目大量读写路径通过 `get_connection()` / `sqlite3.connect()` 直连，不经过 SQLAlchemy engine。WAL 配置必须覆盖两条路径。
+
+**connection.py**（已有部分 PRAGMA，需确认完整性）：
 ```python
-if is_sqlite:
-    engine.execute("PRAGMA journal_mode=WAL")
-    engine.execute("PRAGMA busy_timeout=5000")
+# 在 get_connection() 中确保每次连接都设置：
+conn.execute("PRAGMA journal_mode=WAL")
+conn.execute("PRAGMA busy_timeout=5000")
 ```
+
+**engine.py**（SQLAlchemy 层，使用 connect event）：
+```python
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
+```
+
+**不使用** `engine.execute()`（已废弃于 SQLAlchemy 2.x）。
 
 #### 4.4 前端盘中数据条件渲染
 
@@ -588,7 +609,8 @@ if is_sqlite:
 |------|---------|
 | `src/database/models.py` | 新增 IntradaySnapshot |
 | `fetchers/intraday.py` | 新建 |
-| `src/database/engine.py` | SQLite WAL 配置 |
+| `src/database/connection.py` | SQLite WAL/busy_timeout 确认 |
+| `src/database/engine.py` | SQLAlchemy connect event WAL 配置 |
 | `api/scheduler.py` | 新增盘中轮询任务 |
 | `api/main.py` | 新增盘中数据端点 |
 | `.github/workflows/ci.yml` | 新增覆盖率检查 |
@@ -626,6 +648,6 @@ if is_sqlite:
 |------|------|---------|
 | RPS/potential screener 计算耗时超预期 | 快照生成延迟 | 限制计算范围，异步执行 |
 | AkShare 接口变动 | full_analysis 批量失败 | 预计算范围限制 30-40 只，加重试 |
-| SQLite FTS5 中文分词质量差 | 搜索体验不达标 | simple tokenizer 按字分割可接受，后续可切 PostgreSQL |
+| SQLite FTS5 中文分词质量差 | 搜索体验不达标 | 用中文样本验证效果，不达标则先用 LIKE 保底，后续切 PostgreSQL tsvector |
 | 盘中轮询触发 AkShare 限流 | IP 被封 | 熔断机制 + 低频率（10 分钟） |
 | 前端指标计算性能 | K 线图卡顿 | 限制计算数据量（最近 250 个交易日） |
