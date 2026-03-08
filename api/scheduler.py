@@ -93,6 +93,29 @@ TASK_CONFIGS = {
     },
 }
 
+# Static mapping: task_id -> expected (source_key, dataset_key, db_name) tuples.
+# Used to synthesize error telemetry when a task fails before returning datasets.
+TASK_EXPECTED_DATASETS: dict[str, list[tuple[str, str, str]]] = {
+    "rss_fetch": [("rss", "rss_items", "news")],
+    "ai_analysis": [("ai", "analysis", "news"), ("ai", "rss_sentiment", "news")],
+    "stock_indicators": [
+        ("tushare", "ts_daily", "stocks"),
+        ("tushare", "ts_weekly", "stocks"),
+        ("tushare", "ts_weekly_valuation", "stocks"),
+    ],
+    "fund_flow": [("tushare", "ts_moneyflow", "stocks"), ("tushare", "ts_hsgt_top10", "stocks")],
+    "macro_data": [
+        ("tushare", "ts_daily_basic", "stocks"),
+        ("tushare", "ts_hk_hold", "stocks"),
+        ("tushare", "ts_top10_holders", "stocks"),
+        ("tushare", "ts_cyq_perf", "stocks"),
+    ],
+    "screen_snapshot": [
+        ("derived", "screen_rps", "stocks"),
+        ("derived", "screen_potential", "stocks"),
+    ],
+}
+
 # Fill Polymarket config from centralized settings
 from config.settings import POLYMARKET_ENABLED, POLYMARKET_FETCH_INTERVAL, SCHEDULER_TIMEZONE
 TASK_CONFIGS["polymarket_fetch"]["minutes"] = POLYMARKET_FETCH_INTERVAL
@@ -220,14 +243,28 @@ class SchedulerManager:
                 from src.telemetry.models import DatasetTelemetry, TaskExecutionTelemetry
                 from src.telemetry.recorder import record_telemetry
 
+                datasets = None
                 if isinstance(task_return, list) and task_return and isinstance(task_return[0], DatasetTelemetry):
+                    datasets = task_return
+                elif not result.success and task_id in TASK_EXPECTED_DATASETS:
+                    # Task failed before returning datasets — synthesize error entries
+                    datasets = [
+                        DatasetTelemetry(
+                            source_key=src, dataset_key=ds, db_name=db,
+                            record_count=0, status="error",
+                            error_message=result.error,
+                        )
+                        for src, ds, db in TASK_EXPECTED_DATASETS[task_id]
+                    ]
+
+                if datasets:
                     tel = TaskExecutionTelemetry(
                         task_id=task_id,
                         started_at=start_time,
                         finished_at=result.end_time,
                         success=result.success,
                         error=result.error,
-                        datasets=task_return,
+                        datasets=datasets,
                     )
                     record_telemetry(tel)
             except Exception as tel_err:
@@ -515,8 +552,8 @@ def register_default_tasks():
         rps_count = result.get("rps", 0) if isinstance(result, dict) else 0
         potential_count = result.get("potential", 0) if isinstance(result, dict) else 0
         return [
-            DatasetTelemetry(source_key="akshare", dataset_key="screen_rps", db_name="stocks", record_count=rps_count),
-            DatasetTelemetry(source_key="akshare", dataset_key="screen_potential", db_name="stocks", record_count=potential_count),
+            DatasetTelemetry(source_key="derived", dataset_key="screen_rps", db_name="stocks", record_count=rps_count),
+            DatasetTelemetry(source_key="derived", dataset_key="screen_potential", db_name="stocks", record_count=potential_count),
         ]
 
     scheduler_manager.register_task("screen_snapshot", screen_snapshot_task)

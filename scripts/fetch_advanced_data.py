@@ -314,12 +314,20 @@ class AdvancedFetcher:
     # =========================================================================
     # 主流程
     # =========================================================================
-    def run(self):
+    def run(self) -> dict[str, int]:
+        """主流程，返回各 dataset 本轮处理条数。"""
         log("🚀 开始高级数据抓取 (增量模式)...")
         all_stocks = self.get_all_stocks()
-        today = datetime.now().strftime('%Y%m%d')  # 今天日期
+        today = datetime.now().strftime('%Y%m%d')
         all_dates = self.get_trade_dates(START_DATE)
-        dates = [d for d in all_dates if d <= today]  # 只取历史日期
+        dates = [d for d in all_dates if d <= today]
+
+        counts: dict[str, int] = {
+            "ts_daily_basic": 0,
+            "ts_hk_hold": 0,
+            "ts_top10_holders": 0,
+            "ts_cyq_perf": 0,
+        }
 
         # 1. Daily Basic (增量：跳过已存在日期)
         exist_daily_dates = self.get_existing_daily_basic_dates()
@@ -327,26 +335,29 @@ class AdvancedFetcher:
         log(f"\n1️⃣ 抓取每日指标 (Daily Basic) - 需抓取 {len(target_dates)} 天 (跳过 {len(dates)-len(target_dates)} 天)")
         for d in target_dates:
             count = self.fetch_daily_basic(d)
+            counts["ts_daily_basic"] += count
             print(f"\r   {d}: {count} 条", end="", flush=True)
             time.sleep(0.3)
-            
+
         # 2. HK Hold (增量：跳过已存在日期)
         exist_hk_dates = self.get_existing_hk_hold_dates()
         target_hk_dates = [d for d in dates if d not in exist_hk_dates]
         log(f"\n\n2️⃣ 抓取北向持仓 (HK Hold) - 需抓取 {len(target_hk_dates)} 天 (跳过 {len(dates)-len(target_hk_dates)} 天)")
         for d in target_hk_dates:
             count = self.fetch_hk_hold(d)
+            counts["ts_hk_hold"] += count
             print(f"\r   {d}: {count} 条", end="", flush=True)
             time.sleep(0.3)
 
         # 3. Top10 Holders (增量：按每只股票最新 end_date 续抓)
         target_top10 = all_stocks
         log(f"\n\n3️⃣ 抓取十大股东 (Top10) - 续抓 {len(target_top10)} 只")
-        
+
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = [executor.submit(self.fetch_top10_holders, code) for code in target_top10]
             done = 0
             for f in as_completed(futures):
+                counts["ts_top10_holders"] += f.result() or 0
                 done += 1
                 if done % 50 == 0:
                      print(f"\r   进度: {done}/{len(target_top10)} ({done/len(target_top10)*100:.1f}%)", end="", flush=True)
@@ -354,7 +365,7 @@ class AdvancedFetcher:
         # 4. Capex Patch (增量：仅更新缺少 Capex 的记录)
         capex_targets = self.get_codes_without_capex()
         log(f"\n\n4️⃣ 补充 Capex - 需更新 {len(capex_targets)} 只")
-        
+
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = [executor.submit(self.patch_capex, code) for code in capex_targets]
             done = 0
@@ -362,64 +373,33 @@ class AdvancedFetcher:
                 done += 1
                 if done % 50 == 0:
                      print(f"\r   进度: {done}/{len(capex_targets)}", end="", flush=True)
-        
-        # 5. Cyq Perf (多线程 - 10000积分用户)
+
+        # 5. Cyq Perf (多线程)
         log("\n\n5️⃣ 抓取筹码分布 (Cyq Perf) - 5线程加速...")
         cyq_targets = all_stocks
         log(f"   需续抓: {len(cyq_targets)} 只")
-        
+
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = [executor.submit(self.fetch_cyq_perf_single, code) for code in cyq_targets]
             done = 0
             for f in as_completed(futures):
+                counts["ts_cyq_perf"] += f.result() or 0
                 done += 1
                 if done % 50 == 0:
                     print(f"\r   进度: {done}/{len(cyq_targets)} ({done/len(cyq_targets)*100:.1f}%)", end="", flush=True)
 
         log("\n✅ 所有高级数据抓取完成!")
+        return counts
 
 def run_macro_data() -> list[dict]:
-    """可 import 的入口函数，返回各 dataset 统计。"""
+    """可 import 的入口函数，返回各 dataset 本轮处理条数。"""
     fetcher = AdvancedFetcher()
+    counts = fetcher.run()
 
-    # Collect counts via wrapper
-    conn = get_connection()
-    try:
-        def _count(table: str) -> int:
-            try:
-                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-                return row[0] if row else 0
-            except Exception:
-                return 0
-
-        before = {
-            "ts_daily_basic": _count("ts_daily_basic"),
-            "ts_hk_hold": _count("ts_hk_hold"),
-            "ts_top10_holders": _count("ts_top10_holders"),
-            "ts_cyq_perf": _count("ts_cyq_perf"),
-        }
-    finally:
-        conn.close()
-
-    fetcher.run()
-
-    conn = get_connection()
-    try:
-        def _count_after(table: str) -> int:
-            try:
-                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-                return row[0] if row else 0
-            except Exception:
-                return 0
-
-        return [
-            {"dataset": "ts_daily_basic", "count": _count_after("ts_daily_basic") - before["ts_daily_basic"]},
-            {"dataset": "ts_hk_hold", "count": _count_after("ts_hk_hold") - before["ts_hk_hold"]},
-            {"dataset": "ts_top10_holders", "count": _count_after("ts_top10_holders") - before["ts_top10_holders"]},
-            {"dataset": "ts_cyq_perf", "count": _count_after("ts_cyq_perf") - before["ts_cyq_perf"]},
-        ]
-    finally:
-        conn.close()
+    return [
+        {"dataset": ds, "count": cnt}
+        for ds, cnt in counts.items()
+    ]
 
 
 if __name__ == "__main__":

@@ -932,7 +932,7 @@ async def get_data_source_health():
         from src.database.connection import get_connection
         conn = get_connection()
         try:
-            # 表不存在时友好降级
+            # 表不存在时友好降级，其他错误正常抛出
             try:
                 cursor = conn.execute(
                     "SELECT source_key, dataset_key, db_name, task_id, "
@@ -941,8 +941,10 @@ async def get_data_source_health():
                     "FROM data_source_health ORDER BY source_key, dataset_key"
                 )
                 rows = cursor.fetchall()
-            except Exception:
-                return []
+            except Exception as exc:
+                if "no such table" in str(exc):
+                    return []
+                raise
 
             return [
                 {
