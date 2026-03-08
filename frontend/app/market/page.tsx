@@ -111,23 +111,21 @@ export default function MarketPage() {
           ))}
         </select>
 
-        <div className="overflow-x-auto -mx-1 px-1">
-          <div className="flex gap-1 sm:ml-auto">
-            {SORT_OPTIONS.map((opt) => (
-              <Button
-                key={opt.value}
-                variant={sortBy === opt.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleSort(opt.value)}
-                className="text-xs whitespace-nowrap"
-              >
-                {opt.label}
-                {sortBy === opt.value && (
-                  <ArrowUpDown className="ml-1 h-3 w-3" />
-                )}
-              </Button>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-1 sm:ml-auto">
+          {SORT_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={sortBy === opt.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => handleSort(opt.value)}
+              className="text-xs whitespace-nowrap"
+            >
+              {opt.label}
+              {sortBy === opt.value && (
+                <ArrowUpDown className="ml-1 h-3 w-3" />
+              )}
+            </Button>
+          ))}
         </div>
       </div>
 

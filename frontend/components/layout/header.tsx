@@ -69,10 +69,8 @@ export function Header() {
           </nav>
         </SheetContent>
       </Sheet>
-      <div className="flex-1 flex justify-end">
-        <div className="hidden md:block">
-          <StockSearch />
-        </div>
+      <div className="flex-1 flex justify-end ml-2">
+        <StockSearch />
       </div>
     </header>
   );
