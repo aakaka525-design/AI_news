@@ -6,6 +6,7 @@
 数据源：akshare (上交所/深交所)
 """
 
+import logging
 import sqlite3
 import sys
 import time
@@ -13,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import akshare as ak
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -24,8 +27,7 @@ from src.database.connection import get_connection, STOCKS_DB_PATH
 
 def log(msg: str):
     """格式化输出日志信息。"""
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+    logger.info(msg)
 
 
 def init_margin_table():
@@ -237,8 +239,8 @@ def save_market_summary(records: list):
                 datetime.now().isoformat()
             ))
             count += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("保存融资融券市场汇总失败: %s", e)
     conn.commit()
     conn.close()
     return count

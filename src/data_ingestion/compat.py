@@ -178,8 +178,9 @@ def query_daily(
                 sql += " AND trade_date <= ?"
                 params.append(end_d)
             
-            sql += f" ORDER BY trade_date DESC LIMIT {limit}"
-            
+            sql += " ORDER BY trade_date DESC LIMIT ?"
+            params.append(limit)
+
             cursor = conn.execute(sql, params)
             rows = cursor.fetchall()
             
@@ -218,8 +219,9 @@ def query_daily(
                 sql += " AND date <= ?"
                 params.append(end_date)
             
-            sql += f" ORDER BY date DESC LIMIT {limit}"
-            
+            sql += " ORDER BY date DESC LIMIT ?"
+            params.append(limit)
+
             cursor = conn.execute(sql, params)
             rows = cursor.fetchall()
             

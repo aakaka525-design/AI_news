@@ -54,7 +54,14 @@ async function fetchApi<T>(
   path: string,
   params?: QueryParams,
 ): Promise<T> {
-  const res = await fetch(buildApiUrl(path, params));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let res: Response;
+  try {
+    res = await fetch(buildApiUrl(path, params), { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -118,11 +125,19 @@ async function postApi<T>(
   options?: { params?: QueryParams; body?: unknown },
 ): Promise<T> {
   const headers: HeadersInit = { "Content-Type": "application/json" };
-  const res = await fetch(buildApiUrl(path, options?.params), {
-    method: "POST",
-    headers,
-    ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let res: Response;
+  try {
+    res = await fetch(buildApiUrl(path, options?.params), {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }

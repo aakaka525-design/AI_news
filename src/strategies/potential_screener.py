@@ -14,6 +14,7 @@
   python -m src.strategies.potential_screener --detail
 """
 import argparse
+import logging
 import sqlite3
 import sys
 from datetime import datetime
@@ -21,6 +22,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -30,8 +33,7 @@ from src.database.connection import get_connection, STOCKS_DB_PATH
 
 
 def log(msg: str):
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+    logger.info(msg)
 
 
 def percentile_score(series: pd.Series, max_score: float) -> pd.Series:
@@ -173,7 +175,8 @@ def score_capital_flow(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         if "hk_change" in scores.columns:
             scores.drop(columns=["hk_change"], inplace=True)
         log(f"  北向持股覆盖: {hk['ts_code'].nunique()} 只")
-    except Exception:
+    except Exception as e:
+        logger.warning("北向持股(ts_hk_hold)加载失败, 回退到Top10: %s", e)
         # Fallback: ts_hsgt_top10
         hsgt_query = """
             SELECT ts_code, SUM(net_amount) as total_net
@@ -253,7 +256,8 @@ def score_trading_activity(conn: sqlite3.Connection, candidates: pd.Series) -> p
             log(f"  筹码集中度覆盖: {hn['ts_code'].nunique()} 只")
         else:
             raise ValueError("ts_holder_number empty")
-    except Exception:
+    except Exception as e:
+        logger.warning("筹码集中度(ts_holder_number)加载失败, 回退到机构席位: %s", e)
         # Fallback: 机构席位净买入
         inst_query = """
             SELECT ts_code,
@@ -409,8 +413,9 @@ def score_fundamentals(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
         industry_val = pd.read_sql_query(iv_query, conn)
         if industry_val.empty:
             industry_val = None
-    except Exception:
+    except Exception as e:
         # industry_valuation 表不存在或查询失败, 使用绝对值 fallback
+        logger.warning("行业估值数据加载失败, 使用绝对PE评分: %s", e)
         industry_val = None
 
     # ── PE 评分
@@ -484,8 +489,8 @@ def score_fundamentals(conn: sqlite3.Connection, candidates: pd.Series) -> pd.Da
             scores["fund_growth"] = (scores["fund_growth"] + scores["forecast_adj"]).clip(lower=0, upper=9)
             scores.drop(columns=["forecast_type", "forecast_adj"], inplace=True, errors="ignore")
             log(f"  业绩预告覆盖: {forecast['ts_code'].nunique()} 只")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("业绩预告数据加载失败: %s", e)
 
     # ── 综合评分: pe_missing 时 fund_pe 为 NaN, 用 fillna(0) 计算总分
     scores["score_fundamental"] = (

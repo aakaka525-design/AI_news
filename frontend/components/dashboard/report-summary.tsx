@@ -28,7 +28,7 @@ export function ReportSummary() {
             <div className="space-y-2">
               {items.map((item, i) => (
                 <div
-                  key={`${item.ts_code ?? item.stock_code}-${i}`}
+                  key={`${item.ts_code ?? "unknown"}-${i}`}
                   className="flex items-start justify-between rounded-md border p-2 text-sm"
                 >
                   <div className="flex-1 min-w-0">

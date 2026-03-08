@@ -41,6 +41,17 @@ const RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
   { label: "ALL", value: "ALL" },
 ];
 
+// A 股配色常量（红涨绿跌）
+const CHART_COLORS = {
+  up: "#ef4444",
+  down: "#22c55e",
+  upAlpha: "#ef444480",
+  downAlpha: "#22c55e80",
+  text: "#9ca3af",
+  grid: "#e5e7eb20",
+  border: "#e5e7eb40",
+} as const;
+
 const MA_COLORS = {
   5: "#06b6d4",
   10: "#f59e0b",
@@ -82,30 +93,35 @@ export function KlineChart({
   useEffect(() => {
     if (!containerRef.current || data.length === 0) return;
 
-    const chart = createChart(containerRef.current, {
-      height,
-      layout: {
-        background: { color: "transparent" },
-        textColor: "#9ca3af",
-      },
-      grid: {
-        vertLines: { color: "#e5e7eb20" },
-        horzLines: { color: "#e5e7eb20" },
-      },
-      crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: "#e5e7eb40" },
-      timeScale: { borderColor: "#e5e7eb40" },
-    });
+    let chart: IChartApi;
+    try {
+      chart = createChart(containerRef.current, {
+        height,
+        layout: {
+          background: { color: "transparent" },
+          textColor: CHART_COLORS.text,
+        },
+        grid: {
+          vertLines: { color: CHART_COLORS.grid },
+          horzLines: { color: CHART_COLORS.grid },
+        },
+        crosshair: { mode: 0 },
+        rightPriceScale: { borderColor: CHART_COLORS.border },
+        timeScale: { borderColor: CHART_COLORS.border },
+      });
+    } catch (err) {
+      console.error("Failed to create chart:", err);
+      return;
+    }
     chartRef.current = chart;
 
-    // A股配色：红涨绿跌
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#ef4444",
-      downColor: "#22c55e",
-      borderUpColor: "#ef4444",
-      borderDownColor: "#22c55e",
-      wickUpColor: "#ef4444",
-      wickDownColor: "#22c55e",
+      upColor: CHART_COLORS.up,
+      downColor: CHART_COLORS.down,
+      borderUpColor: CHART_COLORS.up,
+      borderDownColor: CHART_COLORS.down,
+      wickUpColor: CHART_COLORS.up,
+      wickDownColor: CHART_COLORS.down,
     });
 
     // Sort ascending by date for the chart
@@ -158,23 +174,28 @@ export function KlineChart({
     const volData: HistogramData[] = sorted.map((d) => ({
       time: toTime(d.trade_date),
       value: d.vol ?? 0,
-      color: d.close >= d.open ? "#ef444480" : "#22c55e80",
+      color: d.close >= d.open ? CHART_COLORS.upAlpha : CHART_COLORS.downAlpha,
     }));
     volumeSeries.setData(volData);
 
     chart.timeScale().fitContent();
 
-    // Responsive
-    const ro = new ResizeObserver(() => {
-      if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
-      }
-    });
-    ro.observe(containerRef.current);
+    // Responsive resize
+    let ro: ResizeObserver | undefined;
+    try {
+      ro = new ResizeObserver(() => {
+        if (containerRef.current) {
+          chart.applyOptions({ width: containerRef.current.clientWidth });
+        }
+      });
+      ro.observe(containerRef.current);
+    } catch (err) {
+      console.error("ResizeObserver failed:", err);
+    }
 
     return () => {
-      ro.disconnect();
-      chart.remove();
+      ro?.disconnect();
+      try { chart.remove(); } catch { /* already disposed */ }
       chartRef.current = null;
     };
   }, [data, height, showMA]);
@@ -190,19 +211,19 @@ export function KlineChart({
   return (
     <div>
       {onRangeChange && (
-        <div className="flex gap-1 mb-3">
+        <div className="flex flex-wrap gap-1 mb-3 overflow-x-auto">
           {RANGE_OPTIONS.map((opt) => (
             <Button
               key={opt.value}
               variant={activeRange === opt.value ? "default" : "outline"}
               size="sm"
-              className="text-xs h-7 px-2"
+              className="text-xs h-7 px-2 whitespace-nowrap"
               onClick={() => onRangeChange(opt.value)}
             >
               {opt.label}
             </Button>
           ))}
-          <div className="flex gap-2 ml-auto text-xs items-center text-muted-foreground">
+          <div className="flex gap-2 ml-auto text-xs items-center text-muted-foreground whitespace-nowrap">
             <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[5] }} />MA5</span>
             <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[10] }} />MA10</span>
             <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: MA_COLORS[20] }} />MA20</span>

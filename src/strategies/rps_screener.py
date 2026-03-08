@@ -8,11 +8,14 @@
 2. 三线共振：RPS_10/20/50 均 > 90 → 超级强势股
 3. 均线向上：RPS_10 > RPS_20 > RPS_50 → 强度递增
 """
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import sys
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,16 +33,16 @@ def screen_just_started(date: str = None, min_rps10: float = 90, max_rps50: floa
     条件：RPS_10 > 90 且 RPS_50 < 80
     逻辑：短期刚开始走强，但中期还没涨多少，安全边际高
     """
-    print(f"\n🚀 选股策略：刚启动 (RPS_10>{min_rps10} & RPS_50<{max_rps50})")
-    print("=" * 60)
-    
+    logger.info("选股策略：刚启动 (RPS_10>%s & RPS_50<%s)", min_rps10, max_rps50)
+    logger.info("=" * 60)
+
     conn = get_connection()
-    
+
     if not date:
         cursor = conn.execute("SELECT MAX(date) FROM stock_rps")
         date = cursor.fetchone()[0]
-    
-    print(f"   日期: {date}")
+
+    logger.info("   日期: %s", date)
     
     query = """
         SELECT r.stock_code, s.name, r.rps_10, r.rps_20, r.rps_50
@@ -54,13 +57,13 @@ def screen_just_started(date: str = None, min_rps10: float = 90, max_rps50: floa
     
     cursor = conn.execute(query, (date, min_rps10, max_rps50))
     results = cursor.fetchall()
-    
-    print(f"\n   找到 {len(results)} 只符合条件的股票:\n")
-    print(f"   {'代码':<8} {'名称':<10} {'RPS10':<8} {'RPS20':<8} {'RPS50':<8}")
-    print("   " + "-" * 50)
-    
+
+    logger.info("   找到 %d 只符合条件的股票:", len(results))
+    logger.info("   %-8s %-10s %-8s %-8s %-8s", '代码', '名称', 'RPS10', 'RPS20', 'RPS50')
+    logger.info("   " + "-" * 50)
+
     for code, name, rps10, rps20, rps50 in results:
-        print(f"   {code:<8} {name or 'N/A':<10} {rps10:.2f}    {rps20:.2f}    {rps50:.2f}")
+        logger.info("   %-8s %-10s %.2f    %.2f    %.2f", code, name or 'N/A', rps10, rps20, rps50)
     
     conn.close()
     return results
@@ -73,16 +76,16 @@ def screen_triple_strong(date: str = None, min_rps: float = 90):
     条件：RPS_10 > 90 且 RPS_20 > 90 且 RPS_50 > 90
     逻辑：短中长期全面强势，市场龙头
     """
-    print(f"\n🔥 选股策略：三线共振 (RPS全>90)")
-    print("=" * 60)
-    
+    logger.info("选股策略：三线共振 (RPS全>90)")
+    logger.info("=" * 60)
+
     conn = get_connection()
-    
+
     if not date:
         cursor = conn.execute("SELECT MAX(date) FROM stock_rps")
         date = cursor.fetchone()[0]
-    
-    print(f"   日期: {date}")
+
+    logger.info("   日期: %s", date)
     
     query = """
         SELECT r.stock_code, s.name, r.rps_10, r.rps_20, r.rps_50,
@@ -99,13 +102,13 @@ def screen_triple_strong(date: str = None, min_rps: float = 90):
     
     cursor = conn.execute(query, (date, min_rps, min_rps, min_rps))
     results = cursor.fetchall()
-    
-    print(f"\n   找到 {len(results)} 只符合条件的股票:\n")
-    print(f"   {'代码':<8} {'名称':<10} {'RPS10':<8} {'RPS20':<8} {'RPS50':<8} {'均值':<8}")
-    print("   " + "-" * 60)
-    
+
+    logger.info("   找到 %d 只符合条件的股票:", len(results))
+    logger.info("   %-8s %-10s %-8s %-8s %-8s %-8s", '代码', '名称', 'RPS10', 'RPS20', 'RPS50', '均值')
+    logger.info("   " + "-" * 60)
+
     for code, name, rps10, rps20, rps50, avg_rps in results:
-        print(f"   {code:<8} {name or 'N/A':<10} {rps10:.2f}    {rps20:.2f}    {rps50:.2f}    {avg_rps:.2f}")
+        logger.info("   %-8s %-10s %.2f    %.2f    %.2f    %.2f", code, name or 'N/A', rps10, rps20, rps50, avg_rps)
     
     conn.close()
     return results
@@ -118,16 +121,16 @@ def screen_accelerating(date: str = None, min_rps10: float = 80):
     条件：RPS_10 > RPS_20 > RPS_50 且 RPS_10 > 80
     逻辑：短期强于中期强于长期，说明在加速上涨
     """
-    print(f"\n📈 选股策略：加速上涨 (RPS_10>RPS_20>RPS_50)")
-    print("=" * 60)
-    
+    logger.info("选股策略：加速上涨 (RPS_10>RPS_20>RPS_50)")
+    logger.info("=" * 60)
+
     conn = get_connection()
-    
+
     if not date:
         cursor = conn.execute("SELECT MAX(date) FROM stock_rps")
         date = cursor.fetchone()[0]
-    
-    print(f"   日期: {date}")
+
+    logger.info("   日期: %s", date)
     
     query = """
         SELECT r.stock_code, s.name, r.rps_10, r.rps_20, r.rps_50,
@@ -144,13 +147,13 @@ def screen_accelerating(date: str = None, min_rps10: float = 80):
     
     cursor = conn.execute(query, (date, min_rps10))
     results = cursor.fetchall()
-    
-    print(f"\n   找到 {len(results)} 只符合条件的股票:\n")
-    print(f"   {'代码':<8} {'名称':<10} {'RPS10':<8} {'RPS20':<8} {'RPS50':<8} {'动量':<8}")
-    print("   " + "-" * 60)
-    
+
+    logger.info("   找到 %d 只符合条件的股票:", len(results))
+    logger.info("   %-8s %-10s %-8s %-8s %-8s %-8s", '代码', '名称', 'RPS10', 'RPS20', 'RPS50', '动量')
+    logger.info("   " + "-" * 60)
+
     for code, name, rps10, rps20, rps50, momentum in results:
-        print(f"   {code:<8} {name or 'N/A':<10} {rps10:.2f}    {rps20:.2f}    {rps50:.2f}    +{momentum:.2f}")
+        logger.info("   %-8s %-10s %.2f    %.2f    %.2f    +%.2f", code, name or 'N/A', rps10, rps20, rps50, momentum)
     
     conn.close()
     return results
@@ -163,16 +166,16 @@ def screen_with_sector(date: str = None, min_rps: float = 90, top_sector_count: 
     条件：个股RPS_10 > 90 且 所属板块RPS > 90
     逻辑：板块和个股共振，确定性最高
     """
-    print(f"\n⭐ 选股策略：强势板块中的强势股")
-    print("=" * 60)
-    
+    logger.info("选股策略：强势板块中的强势股")
+    logger.info("=" * 60)
+
     conn = get_connection()
-    
+
     if not date:
         cursor = conn.execute("SELECT MAX(date) FROM stock_rps")
         date = cursor.fetchone()[0]
-    
-    print(f"   日期: {date}")
+
+    logger.info("   日期: %s", date)
     
     # 先找强势板块
     cursor = conn.execute("""
@@ -184,12 +187,12 @@ def screen_with_sector(date: str = None, min_rps: float = 90, top_sector_count: 
     """, (date, min_rps, top_sector_count))
     
     strong_sectors = cursor.fetchall()
-    print(f"\n   强势板块 (RPS>{min_rps}):")
+    logger.info("   强势板块 (RPS>%s):", min_rps)
     for sector, rps in strong_sectors:
-        print(f"      {sector}: {rps:.2f}")
-    
+        logger.info("      %s: %.2f", sector, rps)
+
     # 在这些板块中找强势股
-    print(f"\n   板块内强势股 (RPS_10>{min_rps}):")
+    logger.info("   板块内强势股 (RPS_10>%s):", min_rps)
     
     all_results = []
     for sector, sector_rps in strong_sectors:
@@ -206,9 +209,9 @@ def screen_with_sector(date: str = None, min_rps: float = 90, top_sector_count: 
         
         stocks = cursor.fetchall()
         if stocks:
-            print(f"\n   【{sector}】")
+            logger.info("   【%s】", sector)
             for code, name, rps10, rps20, rps50 in stocks:
-                print(f"      {code} {name or 'N/A'}: RPS10={rps10:.2f}")
+                logger.info("      %s %s: RPS10=%.2f", code, name or 'N/A', rps10)
                 all_results.append((code, name, sector, rps10))
     
     conn.close()

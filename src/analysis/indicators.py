@@ -10,12 +10,15 @@
 存入 stocks.db 数据库
 """
 
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import akshare as ak
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from src.analysis.technical import macd as calc_macd
 from src.analysis.technical import rsi as calc_rsi
@@ -154,7 +157,7 @@ def init_indicator_tables():
 
     conn.commit()
     conn.close()
-    print("✅ 指标数据表初始化完成")
+    logger.info("指标数据表初始化完成")
 
 
 def fetch_earnings_forecast(report_date: str = None):
@@ -168,7 +171,7 @@ def fetch_earnings_forecast(report_date: str = None):
         quarter_end = {1: "0331", 2: "0630", 3: "0930", 4: "1231"}
         report_date = f"{year}{quarter_end[quarter]}"
 
-    print(f"\n📊 获取业绩预告（报告期：{report_date}）...")
+    logger.info("获取业绩预告（报告期：%s）...", report_date)
     try:
         df = ak.stock_yjyg_em(date=report_date)
         conn = get_connection()
@@ -200,21 +203,21 @@ def fetch_earnings_forecast(report_date: str = None):
                     ),
                 )
                 count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("保存业绩预告记录失败: %s", e)
 
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条业绩预告")
+        logger.info("保存 %d 条业绩预告", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取业绩预告失败: %s", e)
         return 0
 
 
 def fetch_shipping_indices():
     """获取航运指数"""
-    print("\n🚢 获取航运指数...")
+    logger.info("获取航运指数...")
 
     indices = [
         ("BDI", ak.macro_shipping_bdi, "波罗的海干散货指数"),
@@ -248,20 +251,20 @@ def fetch_shipping_indices():
                     count += 1
                 except Exception:  # noqa: BLE001
                     pass
-            print(f"   {code}({name}): {count} 条")
+            logger.info("   %s(%s): %d 条", code, name, count)
             total += count
         except Exception as e:
-            print(f"   ⚠️ {code} 获取失败: {e}")
+            logger.warning("%s 获取失败: %s", code, e)
 
     conn.commit()
     conn.close()
-    print(f"   ✅ 共保存 {total} 条航运指数数据")
+    logger.info("共保存 %d 条航运指数数据", total)
     return total
 
 
 def fetch_commodity_futures():
     """获取行业关键商品期货价格（工业硅、碳酸锂等）"""
-    print("\n📦 获取行业商品期货价格...")
+    logger.info("获取行业商品期货价格...")
 
     # 行业关键期货品种
     commodities = [
@@ -328,14 +331,14 @@ def fetch_commodity_futures():
                     count += 1
                 except Exception:  # noqa: BLE001
                     pass
-            print(f"   {symbol}({name}): {count} 条")
+            logger.info("   %s(%s): %d 条", symbol, name, count)
             total += count
         except Exception as e:
-            print(f"   ⚠️ {symbol} 获取失败: {e}")
+            logger.warning("%s 获取失败: %s", symbol, e)
 
     conn.commit()
     conn.close()
-    print(f"   ✅ 共保存 {total} 条商品期货数据")
+    logger.info("共保存 %d 条商品期货数据", total)
     return total
 
 
@@ -354,7 +357,7 @@ def fetch_stock_financials(stock_codes: list = None):
     if not stock_codes:
         stock_codes = ["600519", "000001", "300750"]  # 默认
 
-    print(f"\n📊 获取财务指标（{len(stock_codes)} 只股票）...")
+    logger.info("获取财务指标（%d 只股票）...", len(stock_codes))
 
     conn = get_connection()
     count = 0
@@ -395,7 +398,7 @@ def fetch_stock_financials(stock_codes: list = None):
                     cashflow_ratio = None
                     if cashflow and profit and profit != 0:
                         try:
-                            cashflow_ratio = float(cashflow) / float(profit)
+                            cashflow_ratio = round(float(cashflow) / float(profit), 4)
                         except Exception:  # noqa: BLE001
                             pass
 
@@ -430,14 +433,14 @@ def fetch_stock_financials(stock_codes: list = None):
                     pass
 
             if (i + 1) % 10 == 0:
-                print(f"   [{i + 1}/{len(stock_codes)}] 已处理...")
+                logger.info("   [%d/%d] 已处理...", i + 1, len(stock_codes))
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("获取股票 %s 财务指标失败: %s", code, e)
 
     conn.commit()
     conn.close()
-    print(f"   ✅ 保存 {count} 条财务指标数据")
+    logger.info("保存 %d 条财务指标数据", count)
     return count
 
 
@@ -479,13 +482,14 @@ def fetch_stock_daily(stock_code: str, days: int = 60):
         conn.commit()
         conn.close()
         return count
-    except Exception:
+    except Exception as e:
+        logger.warning("获取个股 %s 日行情失败: %s", stock_code, e)
         return 0
 
 
 def fetch_hot_stocks_daily():
     """获取热门股票的日行情"""
-    print("\n📈 获取热门股票日行情...")
+    logger.info("获取热门股票日行情...")
 
     # 从龙虎榜获取热门股票
     conn = get_connection()
@@ -505,52 +509,52 @@ def fetch_hot_stocks_daily():
         count = fetch_stock_daily(code)
         if count > 0:
             total += count
-            print(f"   [{i + 1}/{min(30, len(hot_stocks))}] {code}: {count} 条")
+            logger.info("   [%d/%d] %s: %d 条", i + 1, min(30, len(hot_stocks)), code, count)
 
-    print(f"   ✅ 共保存 {total} 条日行情数据")
+    logger.info("共保存 %d 条日行情数据", total)
     return total
 
 
 def calculate_all_indicators():
     """计算所有股票的历史指标（RPS + 技术面）"""
-    print("\n📊 开始计算历史指标 (ma5/10/20, rps_10/20/50)...")
+    logger.info("开始计算历史指标 (ma5/10/20, rps_10/20/50)...")
 
     conn = get_connection()
 
     # 1. 获取所有股票的日K数据 (Pandas加速处理)
     # 为节省内存，这里只取需要的字段
     # 注意：SQlite读取大量数据可能较慢，但比循环几千次快
-    print("   加载日K数据...")
+    logger.info("   加载日K数据...")
     try:
         df = pd.read_sql("SELECT stock_code, date, close, volume FROM stock_daily", conn)
     except Exception as e:
-        print(f"   ❌ 读取失败: {e}")
+        logger.error("读取日K数据失败: %s", e)
         return
 
     if df.empty:
-        print("   ⚠️ 无日K数据")
+        logger.warning("无日K数据")
         return
 
     # 转换日期格式
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(["stock_code", "date"])
 
-    print(f"   计算 {len(df)} 条日K线的指标...")
+    logger.info("   计算 %d 条日K线的指标...", len(df))
 
     # 定义计算函数（对每个group调用）
     def compute_group_metrics(group):
         # 1. 均线
-        group["ma5"] = group["close"].rolling(window=5).mean()
-        group["ma10"] = group["close"].rolling(window=10).mean()
-        group["ma20"] = group["close"].rolling(window=20).mean()
-        group["ma60"] = group["close"].rolling(window=60).mean()
-        group["vol_ma5"] = group["volume"].rolling(window=5).mean()
+        group["ma5"] = group["close"].rolling(window=5).mean().round(2)
+        group["ma10"] = group["close"].rolling(window=10).mean().round(2)
+        group["ma20"] = group["close"].rolling(window=20).mean().round(2)
+        group["ma60"] = group["close"].rolling(window=60).mean().round(2)
+        group["vol_ma5"] = group["volume"].rolling(window=5).mean().round(2)
 
         # 2. 涨幅 (用于RPS)
-        group["chg_10"] = group["close"].pct_change(10)
-        group["chg_20"] = group["close"].pct_change(20)
-        group["chg_50"] = group["close"].pct_change(50)
-        group["chg_60"] = group["close"].pct_change(60)  # 添加 60 日涨幅
+        group["chg_10"] = group["close"].pct_change(10).round(4)
+        group["chg_20"] = group["close"].pct_change(20).round(4)
+        group["chg_50"] = group["close"].pct_change(50).round(4)
+        group["chg_60"] = group["close"].pct_change(60).round(4)  # 添加 60 日涨幅
 
         # MACD
         dif, dea, hist = calc_macd(group["close"])
@@ -594,7 +598,7 @@ def calculate_all_indicators():
     # 格式化日期字符串
     df_result["date_str"] = df_result["date"].dt.strftime("%Y-%m-%d")
 
-    print("   写入技术指标表...")
+    logger.info("   写入技术指标表...")
     # 分批写入防内存溢出
     batch_size = 50000
     rows = []
@@ -636,7 +640,7 @@ def calculate_all_indicators():
             conn.commit()
             count += len(rows)
             rows = []
-            print(f"   已写入 {count} 条...", end="\r")
+            logger.info("   已写入 %d 条...", count)
 
     if rows:
         cursor.executemany(
@@ -652,10 +656,10 @@ def calculate_all_indicators():
         )
         conn.commit()
         count += len(rows)
-    print(f"\n   ✅ 技术指标写入完成: {count} 条")
+    logger.info("技术指标写入完成: %d 条", count)
 
     # --- 计算 RPS (横截面) ---
-    print("\n   计算每日 RPS 排名 (10/20/50/60日)...")
+    logger.info("   计算每日 RPS 排名 (10/20/50/60日)...")
 
     # 按日期分组计算 Rank
     # 仅保留需要的列
@@ -669,13 +673,13 @@ def calculate_all_indicators():
             return day_group  # 数据太少不计算
 
         # rps_10
-        day_group["rank_10"] = day_group["chg_10"].rank(pct=True) * 100
+        day_group["rank_10"] = (day_group["chg_10"].rank(pct=True) * 100).round(2)
         # rps_20
-        day_group["rank_20"] = day_group["chg_20"].rank(pct=True) * 100
+        day_group["rank_20"] = (day_group["chg_20"].rank(pct=True) * 100).round(2)
         # rps_50
-        day_group["rank_50"] = day_group["chg_50"].rank(pct=True) * 100
+        day_group["rank_50"] = (day_group["chg_50"].rank(pct=True) * 100).round(2)
         # rps_60
-        day_group["rank_60"] = day_group["chg_60"].rank(pct=True) * 100
+        day_group["rank_60"] = (day_group["chg_60"].rank(pct=True) * 100).round(2)
 
         return day_group
 
@@ -684,7 +688,7 @@ def calculate_all_indicators():
 
         # 写入 RPS 表
         # stock_code, date, rps_10, rps_20, rps_50
-        print("   写入 RPS 表...")
+        logger.info("   写入 RPS 表...")
         rps_result["date_str"] = rps_result["date"].dt.strftime("%Y-%m-%d")
 
         rows_rps = []
@@ -711,7 +715,7 @@ def calculate_all_indicators():
                 conn.commit()
                 count_rps += len(rows_rps)
                 rows_rps = []
-                print(f"   已写入 {count_rps} 条...", end="\r")
+                logger.info("   已写入 %d 条...", count_rps)
 
         if rows_rps:
             cursor.executemany(
@@ -725,7 +729,7 @@ def calculate_all_indicators():
             conn.commit()
             count_rps += len(rows_rps)
 
-        print(f"\n   ✅ RPS 计算完成: {count_rps} 条")
+        logger.info("RPS 计算完成: %d 条", count_rps)
 
     conn.close()
 
@@ -734,7 +738,7 @@ def print_stats():
     """打印统计信息"""
     conn = get_connection()
 
-    print("\n📈 指标数据统计:")
+    logger.info("指标数据统计:")
 
     tables = [
         ("earnings_forecast", "业绩预告"),
@@ -750,15 +754,15 @@ def print_stats():
         try:
             cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
             count = cursor.fetchone()[0]
-            print(f"   {name}: {count} 条")
+            logger.info("   %s: %d 条", name, count)
         except Exception:  # noqa: BLE001
-            print(f"   {name}: 0 条")
+            logger.info("   %s: 0 条", name)
 
     # 显示均线多头排列股票数
     try:
         cursor = conn.execute("SELECT COUNT(*) FROM stock_technicals WHERE is_ma_bullish > 0")
         bullish = cursor.fetchone()[0]
-        print(f"   均线多头排列: {bullish} 只")
+        logger.info("   均线多头排列: %d 只", bullish)
     except Exception:  # noqa: BLE001
         pass
 

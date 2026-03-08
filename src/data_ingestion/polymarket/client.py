@@ -1,6 +1,7 @@
 """Polymarket SDK wrapper with pagination support."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from py_clob_client.client import ClobClient
@@ -16,8 +17,9 @@ MAX_PAGES = 50
 class PolymarketClient:
     """Wraps py-clob-client SDK, handles pagination, normalizes data."""
 
-    def __init__(self, host: str = CLOB_HOST):
+    def __init__(self, host: str = CLOB_HOST, timeout: int = 30):
         self._sdk = ClobClient(host)
+        self._timeout = timeout
 
     def get_active_markets(self) -> list[dict[str, Any]]:
         """Fetch all active (sampling) markets, auto-paginating.
@@ -33,7 +35,13 @@ class PolymarketClient:
         try:
             while page < MAX_PAGES:
                 page += 1
-                resp = self._sdk.get_sampling_markets(cursor)
+                # 设置超时保护，防止 SDK 调用永久挂起
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(self._sdk.get_sampling_markets, cursor)
+                    try:
+                        resp = future.result(timeout=self._timeout)
+                    except FuturesTimeoutError:
+                        raise TimeoutError(f"Polymarket SDK timeout after {self._timeout}s")
                 data = resp.get("data", [])
                 if not data:
                     break

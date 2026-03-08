@@ -54,6 +54,23 @@ def get_tushare_token() -> str:
 # 重试装饰器
 # ============================================================
 
+# 不可重试的 HTTP 状态码（客户端错误，重试永远不会成功）
+_NON_RETRYABLE_CODES = {400, 401, 403, 404, 405, 422}
+
+
+def _is_non_retryable(exc: Exception) -> bool:
+    """判断异常是否不可重试（如 4xx 客户端错误）"""
+    exc_str = str(exc).lower()
+    # 检查常见的认证/授权错误
+    if any(kw in exc_str for kw in ("401", "403", "权限", "token无效", "token 无效", "unauthorized", "forbidden")):
+        return True
+    # 检查 HTTP 状态码
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if code and int(code) in _NON_RETRYABLE_CODES:
+        return True
+    return False
+
+
 def retry_with_backoff(
     max_retries: int = 3,
     base_delay: float = 1.0,
@@ -62,7 +79,7 @@ def retry_with_backoff(
 ):
     """
     指数退避重试装饰器
-    
+
     Args:
         max_retries: 最大重试次数
         base_delay: 基础延迟（秒）
@@ -78,6 +95,10 @@ def retry_with_backoff(
                     return func(*args, **kwargs)
                 except exceptions as e:
                     last_exception = e
+                    # 不可重试错误立即抛出
+                    if _is_non_retryable(e):
+                        print(f"   ❌ 不可重试错误，立即抛出: {e}")
+                        raise
                     if attempt < max_retries:
                         delay = min(base_delay * (2 ** attempt), max_delay)
                         print(f"   ⚠️ 重试 {attempt + 1}/{max_retries}，等待 {delay:.1f}s: {e}")

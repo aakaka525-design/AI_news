@@ -9,6 +9,24 @@ from dotenv import load_dotenv
 # 加载 .env 文件
 load_dotenv()
 
+
+def _env_int(key: str, default: int) -> int:
+    """Safely parse integer environment variable."""
+    val = os.getenv(key, "")
+    try:
+        return int(val) if val else default
+    except ValueError:
+        return default
+
+
+def _env_float(key: str, default: float) -> float:
+    """Safely parse float environment variable."""
+    val = os.getenv(key, "")
+    try:
+        return float(val) if val else default
+    except ValueError:
+        return default
+
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -36,14 +54,6 @@ PROXY_API_KEY = os.getenv("PROXY_API_KEY", "")
 PROXY_API_PWD = os.getenv("PROXY_API_PWD", "")
 PROXY_TTL = 100  # 代理有效期（秒）
 
-# API 配置
-SINA_API = "https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022"
-EM_API = "https://push2.eastmoney.com/api/qt/stock/get"
-
-# 并发配置
-DEFAULT_WORKERS = 50
-MAX_WORKERS = 100
-
 # AI 配置
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
@@ -52,7 +62,10 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# 调度器时区
+SCHEDULER_TIMEZONE = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai")
+
 # Polymarket 配置
 POLYMARKET_ENABLED = os.getenv("POLYMARKET_ENABLED", "true").lower() == "true"
-POLYMARKET_FETCH_INTERVAL = int(os.getenv("POLYMARKET_FETCH_INTERVAL", "5"))
-POLYMARKET_VOLATILITY_THRESHOLD = float(os.getenv("POLYMARKET_VOLATILITY_THRESHOLD", "0.10"))
+POLYMARKET_FETCH_INTERVAL = _env_int("POLYMARKET_FETCH_INTERVAL", 5)
+POLYMARKET_VOLATILITY_THRESHOLD = _env_float("POLYMARKET_VOLATILITY_THRESHOLD", 0.10)

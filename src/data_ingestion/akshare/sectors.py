@@ -11,6 +11,7 @@ A股板块概念与成分股获取脚本
 存入独立的 stocks.db 数据库
 """
 
+import logging
 import sqlite3
 import sys
 from datetime import datetime
@@ -19,6 +20,8 @@ import time
 
 import akshare as ak
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -74,7 +77,7 @@ def init_database():
     
     conn.commit()
     conn.close()
-    print("✅ 数据库初始化完成:", STOCKS_DB_PATH)
+    logger.info("数据库初始化完成: %s", STOCKS_DB_PATH)
 
 
 def save_sector(name: str, sector_type: str, code: str = ""):
@@ -103,14 +106,14 @@ def save_sector_stocks(sector_name: str, sector_type: str, stocks: list[tuple[st
                 (stock_code, stock_name, datetime.now().isoformat())
             )
         except Exception as e:
-            print(f"  ⚠️ 保存失败 {stock_code}: {e}")
+            logger.warning("保存失败 %s: %s", stock_code, e)
     conn.commit()
     conn.close()
 
 
 def fetch_industry_sectors(fetch_stocks: bool = True):
     """获取行业板块（统一使用东方财富数据源）"""
-    print("\n📊 获取行业板块...")
+    logger.info("获取行业板块...")
     try:
         df = ak.stock_board_industry_name_em()
         sectors = []
@@ -120,12 +123,12 @@ def fetch_industry_sectors(fetch_stocks: bool = True):
             if name:
                 sectors.append({"name": name, "code": code})
                 save_sector(name, "行业", code)
-        
-        print(f"   ✅ 获取 {len(sectors)} 个行业板块")
-        
+
+        logger.info("获取 %d 个行业板块", len(sectors))
+
         # 获取成分股
         if fetch_stocks:
-            print("   📈 获取成分股...")
+            logger.info("获取成分股...")
             total_stocks = 0
             for i, s in enumerate(sectors):  # 获取全部
                 try:
@@ -133,21 +136,21 @@ def fetch_industry_sectors(fetch_stocks: bool = True):
                     stocks = [(str(row["代码"]), row["名称"]) for _, row in df_stocks.iterrows()]
                     save_sector_stocks(s["name"], "行业", stocks)
                     total_stocks += len(stocks)
-                    print(f"      [{i+1}/{len(sectors)}] {s['name']}: {len(stocks)} 只")
+                    logger.info("      [%d/%d] %s: %d 只", i+1, len(sectors), s['name'], len(stocks))
                     time.sleep(0.5)  # 控制请求频率
                 except Exception as e:
-                    print(f"      ⚠️ {s['name']} 获取失败: {e}")
-            print(f"   ✅ 共获取 {total_stocks} 只成分股")
-        
+                    logger.warning("%s 获取失败: %s", s['name'], e)
+            logger.info("共获取 %d 只成分股", total_stocks)
+
         return sectors
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取行业板块失败: %s", e)
         return []
 
 
 def fetch_concept_sectors(fetch_stocks: bool = True):
     """获取概念板块（统一使用东方财富数据源）"""
-    print("\n💡 获取概念板块...")
+    logger.info("获取概念板块...")
     try:
         df = ak.stock_board_concept_name_em()
         sectors = []
@@ -157,12 +160,12 @@ def fetch_concept_sectors(fetch_stocks: bool = True):
             if name:
                 sectors.append({"name": name, "code": code})
                 save_sector(name, "概念", code)
-        
-        print(f"   ✅ 获取 {len(sectors)} 个概念板块")
-        
+
+        logger.info("获取 %d 个概念板块", len(sectors))
+
         # 获取成分股（全部概念）
         if fetch_stocks:
-            print("   📈 获取概念板块成分股...")
+            logger.info("获取概念板块成分股...")
             total_stocks = 0
             for i, s in enumerate(sectors):  # 获取全部
                 try:
@@ -170,21 +173,21 @@ def fetch_concept_sectors(fetch_stocks: bool = True):
                     stocks = [(str(row["代码"]), row["名称"]) for _, row in df_stocks.iterrows()]
                     save_sector_stocks(s["name"], "概念", stocks)
                     total_stocks += len(stocks)
-                    print(f"      [{i+1}/{len(sectors)}] {s['name']}: {len(stocks)} 只")
+                    logger.info("      [%d/%d] %s: %d 只", i+1, len(sectors), s['name'], len(stocks))
                     time.sleep(0.5)
                 except Exception as e:
-                    print(f"      ⚠️ {s['name']} 获取失败: {e}")
-            print(f"   ✅ 共获取 {total_stocks} 只成分股")
-        
+                    logger.warning("%s 获取失败: %s", s['name'], e)
+            logger.info("共获取 %d 只成分股", total_stocks)
+
         return sectors
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取概念板块失败: %s", e)
         return []
 
 
 def fetch_hot_keywords():
     """获取热门财经关键词"""
-    print("\n🔥 获取热门财经关键词...")
+    logger.info("获取热门财经关键词...")
     keywords = [
         # 科技
         "人工智能", "AI", "大模型", "ChatGPT", "机器人", "无人驾驶", "自动驾驶",
@@ -207,7 +210,7 @@ def fetch_hot_keywords():
     for kw in keywords:
         save_sector(kw, "热词", "")
     
-    print(f"   ✅ 获取 {len(keywords)} 个热门关键词")
+    logger.info("获取 %d 个热门关键词", len(keywords))
     return keywords
 
 
@@ -312,7 +315,7 @@ def fetch_sector_daily(sector_name: str, sector_type: str = "行业", days: int 
 
 def update_all_sectors_daily(workers: int = 4):
     """更新所有板块的日行情"""
-    print("\n📈 获取板块日行情...")
+    logger.info("获取板块日行情...")
     conn = get_connection()
     
     # 获取板块列表
@@ -323,7 +326,7 @@ def update_all_sectors_daily(workers: int = 4):
     total = 0
     count_sectors = 0
     
-    print(f"   共 {len(sectors)} 个板块，开始获取...")
+    logger.info("   共 %d 个板块，开始获取...", len(sectors))
     
     # 暂时使用单线程，因为板块数量不多且akshare内部可能有IO限制
     for i, (name, type_) in enumerate(sectors):
@@ -337,40 +340,40 @@ def update_all_sectors_daily(workers: int = 4):
             count_sectors += 1
             
         if (i + 1) % 50 == 0:
-            print(f"   进度: {i+1}/{len(sectors)} - 成功获取 {count_sectors} 个板块")
-            
-    print(f"   ✅ 板块行情更新完成: {count_sectors} 个板块，共 {total} 条记录")
+            logger.info("   进度: %d/%d - 成功获取 %d 个板块", i+1, len(sectors), count_sectors)
+
+    logger.info("板块行情更新完成: %d 个板块，共 %d 条记录", count_sectors, total)
     return total
 
 
 def print_stats():
     """打印统计信息"""
     conn = get_connection()
-    
-    print("\n📈 数据统计:")
+
+    logger.info("数据统计:")
     cursor = conn.execute("SELECT type, COUNT(*) FROM sectors GROUP BY type")
     for row in cursor.fetchall():
-        print(f"   {row[0]}: {row[1]} 条")
-    
+        logger.info("   %s: %d 条", row[0], row[1])
+
     cursor = conn.execute("SELECT COUNT(*) FROM sector_stocks")
-    print(f"   成分股关系: {cursor.fetchone()[0]} 条")
-    
+    logger.info("   成分股关系: %d 条", cursor.fetchone()[0])
+
     try:
         cursor = conn.execute("SELECT COUNT(*) FROM sector_daily")
-        print(f"   板块日K线: {cursor.fetchone()[0]} 条")
+        logger.info("   板块日K线: %d 条", cursor.fetchone()[0])
     except Exception:  # noqa: BLE001
         pass
 
     cursor = conn.execute("SELECT COUNT(*) FROM stocks")
-    print(f"   独立股票: {cursor.fetchone()[0]} 只")
-    
+    logger.info("   独立股票: %d 只", cursor.fetchone()[0])
+
     conn.close()
 
 
 
 def calculate_sector_rps(window: int = 60):
     """计算板块 RPS (Sector RPS)"""
-    print(f"\n📊 计算板块 RPS (窗口{window}日)...")
+    logger.info("计算板块 RPS (窗口%d日)...", window)
     
     conn = get_connection()
     
@@ -378,14 +381,14 @@ def calculate_sector_rps(window: int = 60):
     try:
         df = pd.read_sql("SELECT sector_name, sector_type, date, change_pct, close FROM sector_daily", conn)
         if df.empty:
-            print("   ⚠️ 无板块行情数据")
+            logger.warning("无板块行情数据")
             return
             
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values(['sector_name', 'date'])
         
         # 2. 计算各期涨幅 (10/20/50日)
-        print("   计算板块阶段涨幅...")
+        logger.info("   计算板块阶段涨幅...")
         
         def compute_chg(group):
             group['chg_10'] = group['close'].pct_change(10)
@@ -400,7 +403,7 @@ def calculate_sector_rps(window: int = 60):
         df_result = df_valid.groupby('sector_name', group_keys=False).apply(compute_chg)
         
         # 3. 计算每日 Rank
-        print("   计算板块横截面排名...")
+        logger.info("   计算板块横截面排名...")
         
         # 准备RPS表
         conn.execute("""
@@ -433,7 +436,7 @@ def calculate_sector_rps(window: int = 60):
             final_rps = rps_df.groupby('date', group_keys=False).apply(compute_daily_rps)
             
             # 批量写入
-            print("   写入板块RPS数据...")
+            logger.info("   写入板块RPS数据...")
             final_rps['date_str'] = final_rps['date'].dt.strftime('%Y-%m-%d')
             
             rows = []
@@ -450,10 +453,10 @@ def calculate_sector_rps(window: int = 60):
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, rows)
             conn.commit()
-            print(f"   ✅ 板块RPS计算完成: {len(rows)} 条")
+            logger.info("板块RPS计算完成: %d 条", len(rows))
             
     except Exception as e:
-        print(f"   ⚠️ 计算失败: {e}")
+        logger.warning("板块RPS计算失败: %s", e)
         # traceback.print_exc()
     finally:
         conn.close()

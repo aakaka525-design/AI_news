@@ -85,7 +85,7 @@ export default function MarketPage() {
       )}
 
       {/* Filters + Sort */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center">
         <Input
           placeholder="搜索代码/名称..."
           value={search}
@@ -93,7 +93,7 @@ export default function MarketPage() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          className="max-w-xs"
+          className="max-w-full sm:max-w-xs"
         />
         <select
           value={industry}
@@ -101,7 +101,7 @@ export default function MarketPage() {
             setIndustry(e.target.value);
             setPage(1);
           }}
-          className="h-9 rounded-md border bg-transparent px-3 text-sm"
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none pr-8 cursor-pointer"
         >
           <option value="">全部行业</option>
           {(industries?.data ?? []).map((ind) => (
@@ -111,21 +111,23 @@ export default function MarketPage() {
           ))}
         </select>
 
-        <div className="flex gap-1 ml-auto">
-          {SORT_OPTIONS.map((opt) => (
-            <Button
-              key={opt.value}
-              variant={sortBy === opt.value ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleSort(opt.value)}
-              className="text-xs"
-            >
-              {opt.label}
-              {sortBy === opt.value && (
-                <ArrowUpDown className="ml-1 h-3 w-3" />
-              )}
-            </Button>
-          ))}
+        <div className="overflow-x-auto -mx-1 px-1">
+          <div className="flex gap-1 sm:ml-auto">
+            {SORT_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                variant={sortBy === opt.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleSort(opt.value)}
+                className="text-xs whitespace-nowrap"
+              >
+                {opt.label}
+                {sortBy === opt.value && (
+                  <ArrowUpDown className="ml-1 h-3 w-3" />
+                )}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -78,7 +78,7 @@ TASK_CONFIGS = {
 }
 
 # Fill Polymarket config from centralized settings
-from config.settings import POLYMARKET_ENABLED, POLYMARKET_FETCH_INTERVAL
+from config.settings import POLYMARKET_ENABLED, POLYMARKET_FETCH_INTERVAL, SCHEDULER_TIMEZONE
 TASK_CONFIGS["polymarket_fetch"]["minutes"] = POLYMARKET_FETCH_INTERVAL
 TASK_CONFIGS["polymarket_fetch"]["enabled"] = POLYMARKET_ENABLED
 
@@ -121,7 +121,7 @@ class SchedulerManager:
     def __init__(self):
         self.scheduler = AsyncIOScheduler(
             jobstores={"default": MemoryJobStore()},
-            timezone="Asia/Shanghai"
+            timezone=SCHEDULER_TIMEZONE
         )
         self._task_history: dict[str, list[TaskResult]] = {}
         self._task_funcs: dict[str, Callable] = {}
@@ -167,11 +167,15 @@ class SchedulerManager:
             
             logger.info(f"▶️ 开始执行任务: {task_id}")
             
-            # 执行任务（支持同步和异步函数）
+            # 执行任务（支持同步和异步函数），带超时保护
+            task_timeout = 3600  # 1 小时超时
             if asyncio.iscoroutinefunction(func):
-                await func()
+                await asyncio.wait_for(func(), timeout=task_timeout)
             else:
-                await asyncio.get_event_loop().run_in_executor(None, func)
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, func),
+                    timeout=task_timeout,
+                )
             
             result.success = True
             result.message = "执行成功"
@@ -190,9 +194,9 @@ class SchedulerManager:
                 self._task_history[task_id] = []
             self._task_history[task_id].append(result)
             
-            # 只保留最近 100 条记录
-            if len(self._task_history[task_id]) > 100:
-                self._task_history[task_id] = self._task_history[task_id][-100:]
+            # 只保留最近 20 条记录（避免内存膨胀）
+            if len(self._task_history[task_id]) > 20:
+                self._task_history[task_id] = self._task_history[task_id][-20:]
         
         return result
     
@@ -231,9 +235,9 @@ class SchedulerManager:
         logger.info("🚀 调度器已启动")
     
     def stop(self):
-        """停止调度器"""
+        """停止调度器（等待进行中的任务完成）"""
         if self._running:
-            self.scheduler.shutdown(wait=False)
+            self.scheduler.shutdown(wait=True)
             self._running = False
             logger.info("⏹️ 调度器已停止")
     
@@ -370,17 +374,17 @@ def register_default_tasks():
     # 注册金融数据任务（同步函数）
     def indicators_task():
         import subprocess
-        subprocess.run(["python3", f"{project_root}/scripts/fetch_history.py"], check=True)
+        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_history.py"], check=True, timeout=300)
     scheduler_manager.register_task("stock_indicators", indicators_task)
-    
+
     def fund_flow_task():
         import subprocess
-        subprocess.run(["python3", f"{project_root}/scripts/fetch_main_money.py"], check=True)
+        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_main_money.py"], check=True, timeout=300)
     scheduler_manager.register_task("fund_flow", fund_flow_task)
-    
+
     def macro_task():
         import subprocess
-        subprocess.run(["python3", f"{project_root}/scripts/fetch_advanced_data.py"], check=True)
+        subprocess.run([sys.executable, f"{project_root}/scripts/fetch_advanced_data.py"], check=True, timeout=300)
     scheduler_manager.register_task("macro_data", macro_task)
     
     # 注册 Polymarket 预测市场任务

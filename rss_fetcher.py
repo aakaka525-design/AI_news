@@ -8,17 +8,20 @@ RSS 订阅模块 - 从 RSS 源获取新闻数据
 4. 支持定时拉取
 """
 
+import logging
 import os
 import json
 import sqlite3
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
 import feedparser
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # 配置
@@ -114,7 +117,7 @@ async def fetch_feed(feed_url: str, timeout: int = 10) -> Optional[str]:
             resp.raise_for_status()
             return resp.text
     except Exception as e:
-        print(f"⚠️ 获取失败 {feed_url}: {e}")
+        logger.warning("获取失败 %s: %s", feed_url, e)
         return None
 
 
@@ -148,7 +151,7 @@ async def fetch_all_feeds(feeds: list[dict] = None, include_rsshub: bool = False
 
     if include_rsshub:
         feeds = feeds + RSSHUB_FEEDS
-        print(f"📡 启用 RSSHub 源 ({len(RSSHUB_FEEDS)} 个)")
+        logger.info("启用 RSSHub 源 (%d 个)", len(RSSHUB_FEEDS))
 
     all_items = []
 
@@ -162,9 +165,9 @@ async def fetch_all_feeds(feeds: list[dict] = None, include_rsshub: bool = False
         if isinstance(content, str) and content:
             items = parse_feed(content, feed["name"], feed["category"])
             all_items.extend(items)
-            print(f"✅ {feed['name']}: {len(items)} 条")
+            logger.info("%s: %d 条", feed['name'], len(items))
         else:
-            print(f"❌ {feed['name']}: 抓取失败")
+            logger.warning("%s: 抓取失败", feed['name'])
 
     return all_items
 
@@ -207,13 +210,13 @@ def levenshtein_similarity(s1: str, s2: str) -> float:
 def get_recent_titles(hours: int = 24) -> list[str]:
     """获取时间窗口内的标题列表"""
     init_rss_table()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.execute(
-        "SELECT title FROM rss_items WHERE fetched_at > datetime('now', ?)",
-        (f'-{hours} hours',)
-    )
-    titles = [row[0] for row in cursor.fetchall()]
-    conn.close()
+    cutoff = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(
+            "SELECT title FROM rss_items WHERE fetched_at > ?",
+            (cutoff,)
+        )
+        titles = [row[0] for row in cursor.fetchall()]
     return titles
 
 
@@ -235,22 +238,21 @@ def is_duplicate(title: str, existing_titles: list[str], threshold: float = 0.85
 
 def init_rss_table():
     """初始化 RSS 表"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS rss_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            link TEXT UNIQUE,
-            summary TEXT,
-            published TEXT,
-            source TEXT,
-            category TEXT,
-            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_rss_fetched ON rss_items(fetched_at DESC)")
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rss_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                link TEXT UNIQUE,
+                summary TEXT,
+                published TEXT,
+                source TEXT,
+                category TEXT,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rss_fetched ON rss_items(fetched_at DESC)")
+        conn.commit()
 
 
 def save_rss_items(items: list[RSSItem], dedup_hours: int = 24, similarity_threshold: float = 0.6) -> tuple[int, int]:
@@ -270,45 +272,50 @@ def save_rss_items(items: list[RSSItem], dedup_hours: int = 24, similarity_thres
     # 获取时间窗口内的已有标题
     existing_titles = get_recent_titles(hours=dedup_hours)
 
-    conn = sqlite3.connect(DB_PATH)
     saved = 0
     skipped = 0
 
-    for item in items:
-        # 1. 相似度去重检查
-        if is_duplicate(item.title, existing_titles, threshold=similarity_threshold):
-            skipped += 1
-            continue
+    with sqlite3.connect(DB_PATH) as conn:
+        batch_count = 0
+        for item in items:
+            # 1. 相似度去重检查
+            if is_duplicate(item.title, existing_titles, threshold=similarity_threshold):
+                skipped += 1
+                continue
 
-        # 2. URL 去重 (数据库层面)
-        try:
-            cursor = conn.execute(
-                "INSERT OR IGNORE INTO rss_items (title, link, summary, published, source, category) VALUES (?, ?, ?, ?, ?, ?)",
-                (item.title, item.link, item.summary, item.published, item.source, item.category)
-            )
-            if cursor.rowcount > 0:
-                saved += 1
-                # 添加到已有标题列表，避免同批次重复
-                existing_titles.append(item.title)
-        except Exception as e:
-            print(f"⚠️ 保存失败: {e}")
+            # 2. URL 去重 (数据库层面)
+            try:
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO rss_items (title, link, summary, published, source, category) VALUES (?, ?, ?, ?, ?, ?)",
+                    (item.title, item.link, item.summary, item.published, item.source, item.category)
+                )
+                if cursor.rowcount > 0:
+                    saved += 1
+                    batch_count += 1
+                    # 添加到已有标题列表，避免同批次重复
+                    existing_titles.append(item.title)
+            except Exception as e:
+                logger.warning("保存失败: %s", e)
 
-    conn.commit()
-    conn.close()
+            # 每 100 条批量 commit
+            if batch_count >= 100:
+                conn.commit()
+                batch_count = 0
+
+        conn.commit()
     return saved, skipped
 
 
 def get_recent_rss(limit: int = 50) -> list[dict]:
     """获取最近的 RSS 条目"""
     init_rss_table()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.execute(
-        "SELECT * FROM rss_items ORDER BY fetched_at DESC LIMIT ?",
-        (limit,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT * FROM rss_items ORDER BY fetched_at DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cursor.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -318,16 +325,16 @@ def get_recent_rss(limit: int = 50) -> list[dict]:
 
 async def run_rss_fetch(feeds: list[dict] = None, save: bool = True, include_rsshub: bool = False):
     """运行 RSS 抓取"""
-    print(f"🔄 开始抓取 RSS...")
+    logger.info("开始抓取 RSS...")
 
     items = await fetch_all_feeds(feeds, include_rsshub=include_rsshub)
-    print(f"\n📊 共获取 {len(items)} 条数据")
+    logger.info("共获取 %d 条数据", len(items))
 
     if save and items:
         saved, skipped = save_rss_items(items)
-        print(f"💾 新增保存 {saved} 条")
+        logger.info("新增保存 %d 条", saved)
         if skipped > 0:
-            print(f"🔍 相似度过滤 {skipped} 条")
+            logger.info("相似度过滤 %d 条", skipped)
 
     return items
 

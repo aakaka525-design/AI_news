@@ -1,8 +1,19 @@
 "use client";
 
+import { Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NewsList } from "@/components/news/news-list";
 import { RssList } from "@/components/news/rss-list";
+
+function NewsLoadingSkeleton() {
+  return (
+    <div className="animate-pulse space-y-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="h-20 rounded-lg bg-muted" />
+      ))}
+    </div>
+  );
+}
 
 export default function NewsPage() {
   return (
@@ -14,10 +25,14 @@ export default function NewsPage() {
           <TabsTrigger value="rss">RSS 订阅</TabsTrigger>
         </TabsList>
         <TabsContent value="webhook">
-          <NewsList />
+          <Suspense fallback={<NewsLoadingSkeleton />}>
+            <NewsList />
+          </Suspense>
         </TabsContent>
         <TabsContent value="rss">
-          <RssList />
+          <Suspense fallback={<NewsLoadingSkeleton />}>
+            <RssList />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>

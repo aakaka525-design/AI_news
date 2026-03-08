@@ -28,6 +28,7 @@ def create_engine_from_url(database_url: str, **kwargs):
             "pool_size": 10,
             "max_overflow": 20,
             "pool_pre_ping": True,
+            "pool_recycle": 3600,
         }
     defaults.update(kwargs)
     return _create_engine(database_url, **defaults)

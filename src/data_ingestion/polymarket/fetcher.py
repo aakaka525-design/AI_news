@@ -3,6 +3,12 @@
 import logging
 
 from sqlalchemy.orm import sessionmaker
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from config.settings import POLYMARKET_ENABLED, POLYMARKET_VOLATILITY_THRESHOLD
 from src.data_ingestion.polymarket.client import PolymarketClient
@@ -39,6 +45,16 @@ class PolymarketFetcher:
         """Create Polymarket tables if they don't exist (idempotent)."""
         PolymarketBase.metadata.create_all(engine)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=30),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        reraise=True,
+    )
+    def _fetch_markets(self) -> list[dict]:
+        """Fetch active markets with automatic retry on transient network errors."""
+        return self.client.get_active_markets()
+
     def run(self) -> int:
         """Fetch, detect, translate, and write alerts. Returns count of alerts generated."""
         if not self.enabled:
@@ -46,9 +62,9 @@ class PolymarketFetcher:
             return 0
 
         try:
-            markets = self.client.get_active_markets()
+            markets = self._fetch_markets()
         except Exception as e:
-            logger.error(f"Polymarket fetch failed: {e}")
+            logger.error(f"Polymarket fetch failed after retries: {e}")
             return 0
 
         if not markets:

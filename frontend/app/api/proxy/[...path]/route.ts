@@ -66,6 +66,16 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
     return new Response("Missing target path", { status: 400 });
   }
 
+  // Security: only allow proxying to known API path prefixes
+  const ALLOWED_PREFIXES = ["api/", "webhook/", "health"];
+  const joinedPath = pathParts.join("/");
+  const isAllowed = ALLOWED_PREFIXES.some((prefix) =>
+    joinedPath === prefix.replace(/\/$/, "") || joinedPath.startsWith(prefix)
+  );
+  if (!isAllowed) {
+    return new Response("Forbidden: path not in allowlist", { status: 403 });
+  }
+
   const targetUrl = buildTargetUrl(baseUrl, pathParts, request.nextUrl.search);
   const headers = buildForwardHeaders(request);
 

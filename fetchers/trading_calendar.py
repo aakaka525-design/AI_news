@@ -9,18 +9,23 @@
 4. 缓存交易日历以减少 API 调用
 """
 
+import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import akshare as ak
 
+logger = logging.getLogger(__name__)
+
 # 数据库路径 (使用公共数据库模块)
 from fetchers.db import STOCKS_DB_PATH
 
-# 缓存（内存中）
+# 缓存（内存中）— 使用 Lock 保证线程安全
 _trading_days_cache: Optional[set[str]] = None
 _cache_date: Optional[str] = None
+_cache_lock = threading.Lock()
 
 
 def get_connection() -> sqlite3.Connection:
@@ -43,18 +48,31 @@ def init_trading_calendar_table():
     conn.close()
 
 
-def fetch_trading_calendar(year: int = None) -> list[str]:
+def fetch_trading_calendar(year: int = None, timeout: int = 60) -> list[str]:
     """
     从 akshare 获取交易日历
 
     Args:
         year: 指定年份，默认当前年份
+        timeout: 超时秒数
 
     Returns:
         list[str]: 交易日列表 (YYYY-MM-DD)
     """
+    import signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError(f"AkShare fetch_trading_calendar timed out after {timeout}s")
+
     try:
-        df = ak.tool_trade_date_hist_sina()
+        old_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(timeout)
+        try:
+            df = ak.tool_trade_date_hist_sina()
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 
         # 转换为字符串格式
         dates = df['trade_date'].astype(str).tolist()
@@ -65,7 +83,7 @@ def fetch_trading_calendar(year: int = None) -> list[str]:
 
         return dates
     except Exception as e:
-        print(f"⚠️ 获取交易日历失败: {e}")
+        logger.warning("获取交易日历失败: %s", e)
         return []
 
 
@@ -85,8 +103,8 @@ def save_trading_calendar(dates: list[str]) -> int:
                 VALUES (?, 1)
             """, (date,))
             count += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("保存交易日历记录失败 %s: %s", date, e)
 
     conn.commit()
     conn.close()
@@ -94,38 +112,43 @@ def save_trading_calendar(dates: list[str]) -> int:
 
 
 def load_trading_days() -> set[str]:
-    """从数据库加载交易日（带缓存）"""
+    """从数据库加载交易日（带缓存，线程安全）"""
     global _trading_days_cache, _cache_date
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 检查缓存是否有效（同一天内有效）
+    # 快速路径：缓存有效时无需加锁
     if _trading_days_cache is not None and _cache_date == today:
         return _trading_days_cache
 
-    # 从数据库加载
-    try:
-        conn = get_connection()
-        cursor = conn.execute("SELECT date FROM trading_calendar WHERE is_trading_day = 1")
-        dates = {row[0] for row in cursor.fetchall()}
-        conn.close()
+    with _cache_lock:
+        # Double-check: 另一个线程可能已经刷新了缓存
+        if _trading_days_cache is not None and _cache_date == today:
+            return _trading_days_cache
 
-        # 如果数据库为空，从 API 获取并保存
-        if not dates:
-            print("📅 首次加载交易日历...")
-            api_dates = fetch_trading_calendar()
-            if api_dates:
-                save_trading_calendar(api_dates)
-                dates = set(api_dates)
-                print(f"   ✅ 已保存 {len(dates)} 个交易日")
+        # 从数据库加载
+        try:
+            conn = get_connection()
+            cursor = conn.execute("SELECT date FROM trading_calendar WHERE is_trading_day = 1")
+            dates = {row[0] for row in cursor.fetchall()}
+            conn.close()
 
-        _trading_days_cache = dates
-        _cache_date = today
-        return dates
+            # 如果数据库为空，从 API 获取并保存
+            if not dates:
+                logger.info("首次加载交易日历...")
+                api_dates = fetch_trading_calendar()
+                if api_dates:
+                    save_trading_calendar(api_dates)
+                    dates = set(api_dates)
+                    logger.info("已保存 %d 个交易日", len(dates))
 
-    except Exception as e:
-        print(f"⚠️ 加载交易日历失败: {e}")
-        return set()
+            _trading_days_cache = dates
+            _cache_date = today
+            return dates
+
+        except Exception as e:
+            logger.warning("加载交易日历失败: %s", e)
+            return set()
 
 
 def is_trading_day(date: str) -> bool:

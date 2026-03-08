@@ -4,7 +4,7 @@ services:
     container_name: trendradar
     restart: unless-stopped
     networks:
-      - news_network
+      - backend_net
     volumes:
       - ./trendradar/config:/app/config:ro
       - trendradar_output:/app/output
@@ -22,6 +22,11 @@ services:
       # Generic Webhook 推送到 Dashboard
       - GENERIC_WEBHOOK_URL=http://dashboard:8000/webhook/receive
       - "GENERIC_WEBHOOK_TEMPLATE={\"title\": \"{title}\", \"content\": \"{content}\"}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - dashboard
 
@@ -30,7 +35,9 @@ services:
     container_name: ainews_dashboard
     restart: unless-stopped
     networks:
-      - news_network
+      - frontend_net
+      - backend_net
+      - data_net
     ports:
       - "8000:8000"
     volumes:
@@ -38,8 +45,8 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - TZ=Asia/Shanghai
-      - DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:-change_me_ainews_db_password}@postgres:5432/ainews
-      - NEWS_DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:-change_me_ainews_db_password}@postgres:5432/ainews
+      - DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}@postgres:5432/ainews
+      - NEWS_DATABASE_URL=postgresql://ainews:${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}@postgres:5432/ainews
       - AI_ANALYSIS_ENABLED=${AI_ANALYSIS_ENABLED:-false}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_BASE_URL=${AI_BASE_URL:-}
@@ -52,6 +59,21 @@ services:
       - POLYMARKET_ENABLED=${POLYMARKET_ENABLED:-true}
       - POLYMARKET_FETCH_INTERVAL=${POLYMARKET_FETCH_INTERVAL:-5}
       - POLYMARKET_VOLATILITY_THRESHOLD=${POLYMARKET_VOLATILITY_THRESHOLD:-0.10}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,7 +83,7 @@ services:
     container_name: rsshub
     restart: unless-stopped
     networks:
-      - news_network
+      - backend_net
     ports:
       - "1200:1200"
     environment:
@@ -73,6 +95,16 @@ services:
       - ACCESS_KEY=${RSSHUB_ACCESS_KEY:-}
       # 代理配置（可选）
       - PROXY_URI=${PROXY_URI:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1200"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
@@ -81,13 +113,28 @@ services:
     container_name: ainews_frontend
     restart: unless-stopped
     networks:
-      - news_network
+      - frontend_net
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=/api/proxy
       - DASHBOARD_INTERNAL_URL=${DASHBOARD_INTERNAL_URL:-http://dashboard:8000}
       - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - dashboard
 
@@ -97,16 +144,21 @@ services:
     container_name: nocodb
     restart: unless-stopped
     networks:
-      - news_network
+      - data_net
     ports:
       - "8180:8080"
     volumes:
       - nocodb_data:/usr/app/data
     environment:
       - TZ=Asia/Shanghai
-      - NC_DB=pg://nocodb_meta:5432?u=postgres&p=${NOCODB_META_PASSWORD:-change_me_nocodb_meta_password}&d=nocodb
+      - NC_DB=pg://nocodb_meta:5432?u=postgres&p=${NOCODB_META_PASSWORD:?请在 .env 中设置 NOCODB_META_PASSWORD}&d=nocodb
       # 禁用遥测
       - NC_DISABLE_TELE=true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # NocoDB 元数据存储（PostgreSQL）
   nocodb_meta:
@@ -114,26 +166,31 @@ services:
     container_name: nocodb_meta
     restart: unless-stopped
     networks:
-      - news_network
+      - data_net
     volumes:
       - nocodb_pgdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${NOCODB_META_PASSWORD:-change_me_nocodb_meta_password}
+      - POSTGRES_PASSWORD=${NOCODB_META_PASSWORD:?请在 .env 中设置 NOCODB_META_PASSWORD}
       - POSTGRES_DB=nocodb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   postgres:
     image: postgres:15
     container_name: ainews_postgres
     restart: unless-stopped
     networks:
-      - news_network
+      - data_net
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: ainews
       POSTGRES_USER: ainews
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_ainews_db_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -141,9 +198,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
-  news_network:
+  frontend_net:
+    driver: bridge
+  backend_net:
+    driver: bridge
+  data_net:
     driver: bridge
 
 volumes:

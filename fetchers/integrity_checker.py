@@ -9,11 +9,14 @@
 4. 生成完整性报告
 """
 
+import logging
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 # 数据库路径 (使用公共数据库模块)
 from fetchers.db import STOCKS_DB_PATH
@@ -170,8 +173,8 @@ def check_table_freshness() -> list[dict]:
                     else:
                         latest_dt = datetime.strptime(latest_str, "%Y-%m-%d")
                         delay = (datetime.now() - latest_dt).days
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("计算数据延迟失败 (table=%s): %s", table, e)
 
             # 判断状态（财务指标特殊处理：允许 > 90 天）
             if name == '财务指标':

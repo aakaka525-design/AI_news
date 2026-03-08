@@ -234,6 +234,8 @@ class StockDaily(Base, TimestampMixin, TsCodeMixin):
         Returns:
             {'qfq_close': 前复权价, 'hfq_close': 后复权价}
         """
+        if not latest_adj:
+            return {'qfq_close': None, 'hfq_close': None}
         return {
             'qfq_close': round(close * adj_factor / latest_adj, 2),
             'hfq_close': round(close * adj_factor, 2)
@@ -336,7 +338,7 @@ class NewsFlash(Base, TimestampMixin):
     title = Column(String(500), nullable=False, comment="标题")
     content = Column(Text, comment="正文内容")
     summary = Column(Text, comment="AI 摘要")
-    source = Column(String(100), comment="来源")
+    source = Column(String(100), index=True, comment="来源")
     url = Column(String(500), comment="原文链接")
     
     # 时间
@@ -349,7 +351,7 @@ class NewsFlash(Base, TimestampMixin):
     # 🔥 AI 字段
     embedding = Column(JSON, comment="语义向量 (1536维)")
     sentiment_score = Column(Numeric(4, 3), comment="情绪分数 (-1.000 ~ 1.000)")
-    sentiment_label = Column(String(20), comment="情绪标签 (positive/negative/neutral)")
+    sentiment_label = Column(String(20), index=True, comment="情绪标签 (positive/negative/neutral)")
     importance = Column(Integer, default=0, comment="重要性 (0-10)")
     
     # 标签

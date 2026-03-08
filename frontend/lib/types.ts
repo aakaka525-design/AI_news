@@ -63,7 +63,6 @@ export interface SentimentStats {
 export interface ResearchReport {
   id?: number;
   ts_code?: string;
-  stock_code?: string;
   stock_name?: string;
   title: string;
   institution?: string;

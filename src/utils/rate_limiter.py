@@ -15,23 +15,24 @@ from typing import Callable, Optional
 class TokenBucket:
     """
     令牌桶限流器
-    
+
     使用令牌桶算法控制请求速率，线程安全。
-    
+    使用 threading.Condition 避免 Lock+sleep 竞态问题。
+
     Args:
         rate: 每秒生成的令牌数
         capacity: 桶的容量（最大令牌数）
-    
+
     Example:
         # 300 请求/分钟 = 5 请求/秒
         bucket = TokenBucket(rate=5, capacity=10)
         bucket.acquire()  # 阻塞直到获取令牌
     """
-    
+
     def __init__(self, rate: float, capacity: int = None):
         """
         初始化令牌桶
-        
+
         Args:
             rate: 每秒令牌生成速率
             capacity: 桶容量，默认为 rate
@@ -45,37 +46,37 @@ class TokenBucket:
             raise ValueError("capacity must be > 0")
         self.tokens = self.capacity
         self.last_time = time.monotonic()
-        self._lock = threading.Lock()
+        self._condition = threading.Condition(threading.Lock())
 
     def _validate_request_tokens(self, tokens: int) -> None:
         if tokens <= 0:
             raise ValueError("tokens must be > 0")
         if tokens > self.capacity:
             raise ValueError("tokens cannot exceed bucket capacity")
-    
+
     def _refill(self):
-        """补充令牌"""
+        """补充令牌（必须在持有锁时调用）"""
         now = time.monotonic()
         elapsed = now - self.last_time
         new_tokens = elapsed * self.rate
         self.tokens = min(self.capacity, self.tokens + new_tokens)
         self.last_time = now
-    
+
     def acquire(self, tokens: int = 1, blocking: bool = True) -> bool:
         """
         获取令牌
-        
+
         Args:
             tokens: 需要的令牌数
             blocking: 是否阻塞等待
-            
+
         Returns:
             是否成功获取令牌
         """
         self._validate_request_tokens(tokens)
 
-        while True:
-            with self._lock:
+        with self._condition:
+            while True:
                 self._refill()
 
                 if self.tokens >= tokens:
@@ -85,18 +86,16 @@ class TokenBucket:
                 if not blocking:
                     return False
 
-                # 计算需要等待的时间
+                # 在 Condition 内等待，醒来后重新检查
                 wait_time = (tokens - self.tokens) / self.rate
+                self._condition.wait(timeout=wait_time)
 
-            # 在锁外等待，避免阻塞其他调用
-            time.sleep(wait_time)
-    
     async def acquire_async(self, tokens: int = 1) -> bool:
         """异步获取令牌"""
         self._validate_request_tokens(tokens)
 
         while True:
-            with self._lock:
+            with self._condition:
                 self._refill()
 
                 if self.tokens >= tokens:

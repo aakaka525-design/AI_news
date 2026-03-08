@@ -1,17 +1,29 @@
-FROM python:3.12-slim
+# Stage 1: Build
+FROM python:3.12-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-# 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt psycopg2-binary
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt psycopg2-binary
 
-# 项目代码
+# Stage 2: Runtime
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Only runtime deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Project code
 COPY src/ src/
 COPY api/ api/
 COPY fetchers/ fetchers/
@@ -22,6 +34,10 @@ COPY docker/entrypoint.sh ./
 COPY rss_fetcher.py run.py ./
 
 RUN chmod +x entrypoint.sh
+
+# Non-root user
+RUN useradd -m -r appuser && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

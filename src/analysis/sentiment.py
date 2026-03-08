@@ -12,11 +12,14 @@
 - 炸板率 < 20% + 连板高度 ≥ 5 → 高情绪
 - 跌停 > 涨停 → 风险市场
 """
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 import akshare as ak
 import json
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -61,7 +64,7 @@ def init_table():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sentiment_date ON market_sentiment(date)")
     conn.commit()
     conn.close()
-    print("✅ 市场情绪表初始化完成")
+    logger.info("市场情绪表初始化完成")
 
 
 def get_last_trade_date():
@@ -86,12 +89,12 @@ def fetch_sentiment(date: str = None):
     
     date_formatted = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
     
-    print(f"\n📊 计算市场情绪 ({date_formatted})...")
-    
+    logger.info("计算市场情绪 (%s)...", date_formatted)
+
     conn = get_connection()
-    
+
     # 1. 涨停数据
-    print("   获取涨停数据...")
+    logger.info("   获取涨停数据...")
     limit_up_count = 0
     first_board_count = 0
     continuous_max = 0
@@ -114,23 +117,23 @@ def fetch_sentiment(date: str = None):
             if '炸板次数' in df.columns:
                 broken_board_count = len(df[df['炸板次数'] > 0])
         
-        print(f"   ✅ 涨停: {limit_up_count}, 首板: {first_board_count}, 最高连板: {continuous_max}")
+        logger.info("   涨停: %d, 首板: %d, 最高连板: %d", limit_up_count, first_board_count, continuous_max)
     except Exception as e:
-        print(f"   ⚠️ 涨停数据获取失败: {e}")
+        logger.warning("涨停数据获取失败: %s", e)
     
     # 2. 跌停数据
-    print("   获取跌停数据...")
+    logger.info("   获取跌停数据...")
     limit_down_count = 0
     try:
         df = ak.stock_zt_pool_dtgc_em(date=date)  # 跌停池
         if not df.empty:
             limit_down_count = len(df)
-        print(f"   ✅ 跌停: {limit_down_count}")
+        logger.info("   跌停: %d", limit_down_count)
     except Exception as e:
-        print(f"   ⚠️ 跌停数据获取失败: {e}")
+        logger.warning("跌停数据获取失败: %s", e)
     
     # 3. 涨跌家数 + 平均涨幅
-    print("   获取涨跌家数...")
+    logger.info("   获取涨跌家数...")
     up_count = 0
     down_count = 0
     avg_change = 0
@@ -164,12 +167,12 @@ def fetch_sentiment(date: str = None):
             up_count = row[0]
             down_count = row[1]
             avg_change = row[2]
-        print(f"   ✅ 上涨: {up_count}, 下跌: {down_count}, 平均涨幅: {avg_change:.2f}%")
+        logger.info("   上涨: %d, 下跌: %d, 平均涨幅: %.2f%%", up_count, down_count, avg_change)
     except Exception as e:
-        print(f"   ⚠️ 涨跌家数统计失败: {e}")
+        logger.warning("涨跌家数统计失败: %s", e)
     
     # 4. 两市成交额
-    print("   获取两市成交额...")
+    logger.info("   获取两市成交额...")
     total_amount = 0
     try:
         if _table_exists(conn, "ts_daily"):
@@ -185,12 +188,12 @@ def fetch_sentiment(date: str = None):
         row = cursor.fetchone()
         if row and row[0]:
             total_amount = row[0]
-        print(f"   ✅ 两市成交: {total_amount:.0f}亿")
+        logger.info("   两市成交: %.0f亿", total_amount)
     except Exception as e:
-        print(f"   ⚠️ 成交额统计失败: {e}")
+        logger.warning("成交额统计失败: %s", e)
     
     # 5. 北向资金
-    print("   获取北向资金...")
+    logger.info("   获取北向资金...")
     north_net = 0
     try:
         if _table_exists(conn, "ts_hsgt_top10"):
@@ -206,9 +209,9 @@ def fetch_sentiment(date: str = None):
         row = cursor.fetchone()
         if row and row[0]:
             north_net = row[0]
-        print(f"   ✅ 北向净买: {north_net:.2f}亿")
+        logger.info("   北向净买: %.2f亿", north_net)
     except Exception as e:
-        print(f"   ⚠️ 北向资金统计失败: {e}")
+        logger.warning("北向资金统计失败: %s", e)
     
     # 6. 计算情绪评分 (0-100)
     broken_rate = 0
@@ -268,7 +271,7 @@ def fetch_sentiment(date: str = None):
     
     score = max(0, min(100, score))  # 限制在0-100
     
-    print(f"\n   📈 情绪评分: {score}/100")
+    logger.info("   情绪评分: %d/100", score)
     
     # 保存数据
     conn.execute("""
@@ -303,17 +306,17 @@ def fetch_sentiment(date: str = None):
     conn.commit()
     
     # 输出情绪解读
-    print("\n   📊 情绪解读:")
+    logger.info("   情绪解读:")
     if score >= 80:
-        print("   🔥 极度乐观！市场亢奋，注意高位风险")
+        logger.info("   极度乐观！市场亢奋，注意高位风险")
     elif score >= 60:
-        print("   😊 积极向上，可适当进攻")
+        logger.info("   积极向上，可适当进攻")
     elif score >= 40:
-        print("   😐 情绪中性，观望为主")
+        logger.info("   情绪中性，观望为主")
     elif score >= 20:
-        print("   😟 情绪低迷，控制仓位")
+        logger.warning("   情绪低迷，控制仓位")
     else:
-        print("   😱 极度恐慌！风险市场，防守为主")
+        logger.warning("   极度恐慌！风险市场，防守为主")
     
     conn.close()
     return score
@@ -321,36 +324,36 @@ def fetch_sentiment(date: str = None):
 
 def fetch_history(days: int = 30):
     """获取历史情绪数据"""
-    print(f"\n📊 获取最近 {days} 个交易日的情绪数据...")
-    
+    logger.info("获取最近 %d 个交易日的情绪数据...", days)
+
     try:
         df = ak.tool_trade_date_hist_sina()
         trade_dates = df['trade_date'].astype(str).tolist()
-        
+
         today = datetime.now().strftime("%Y-%m-%d")
         past_dates = [d for d in trade_dates if d <= today][-days:]
-        
+
         for date in past_dates:
             date_str = date.replace("-", "")
             fetch_sentiment(date_str)
-        
-        print(f"\n✅ 共处理 {len(past_dates)} 个交易日")
-        
+
+        logger.info("共处理 %d 个交易日", len(past_dates))
+
     except Exception as e:
-        print(f"❌ 获取交易日历失败: {e}")
+        logger.error("获取交易日历失败: %s", e)
 
 
 def print_stats():
     """打印统计信息"""
     conn = get_connection()
-    
-    print("\n📊 市场情绪统计:")
-    
+
+    logger.info("市场情绪统计:")
+
     cursor = conn.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM market_sentiment")
     total, min_date, max_date = cursor.fetchone()
-    print(f"   总记录数: {total} 条")
-    print(f"   日期范围: {min_date} ~ {max_date}")
-    
+    logger.info("   总记录数: %d 条", total)
+    logger.info("   日期范围: %s ~ %s", min_date, max_date)
+
     # 最新情绪
     cursor = conn.execute("""
         SELECT date, limit_up_count, limit_down_count, continuous_limit_up_max,
@@ -359,14 +362,13 @@ def print_stats():
         ORDER BY date DESC
         LIMIT 5
     """)
-    print(f"\n   近期情绪:")
-    print(f"   {'日期':<12} {'涨停':<6} {'跌停':<6} {'连板':<6} {'炸板率':<8} {'评分':<6}")
-    print("   " + "-" * 50)
+    logger.info("   近期情绪:")
+    logger.info("   %-12s %-6s %-6s %-6s %-8s %-6s", '日期', '涨停', '跌停', '连板', '炸板率', '评分')
+    logger.info("   " + "-" * 50)
     for row in cursor.fetchall():
         date, up, down, cont, broken, score = row
-        score_emoji = "🔥" if score >= 60 else "😐" if score >= 40 else "😟"
-        print(f"   {date:<12} {up:<6} {down:<6} {cont:<6} {broken:.1f}%    {score}{score_emoji}")
-    
+        logger.info("   %-12s %-6d %-6d %-6d %.1f%%    %d", date, up, down, cont, broken, score)
+
     conn.close()
 
 

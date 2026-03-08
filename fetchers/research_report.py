@@ -65,21 +65,37 @@ def parse_eastmoney_reports(stock_code: str, df: pd.DataFrame) -> list[dict]:
     return reports
 
 
-def fetch_stock_reports(stock_code: str) -> list[dict]:
+def fetch_stock_reports(stock_code: str, timeout: int = 60) -> list[dict]:
     """
     Fetch research reports for a single stock from AkShare.
 
     Args:
         stock_code: 6-digit stock code
+        timeout: 超时秒数
 
     Returns:
         List of report dicts compatible with ReportRepository.upsert_report()
     """
+    import signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError(f"AkShare fetch_stock_reports({stock_code}) timed out after {timeout}s")
+
     try:
         import akshare as ak
 
-        df = ak.stock_research_report_em(symbol=stock_code)
+        old_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(timeout)
+        try:
+            df = ak.stock_research_report_em(symbol=stock_code)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
         return parse_eastmoney_reports(stock_code, df)
+    except TimeoutError as e:
+        logger.warning("Timeout fetching reports for %s: %s", stock_code, e)
+        return []
     except Exception as e:
         logger.warning("Failed to fetch reports for %s: %s", stock_code, e)
         return []
@@ -146,11 +162,12 @@ def _fallback_hot_stock_codes(limit: int) -> list[str]:
                         (limit,),
                     ).fetchall()
                     codes.extend(str(r["code"]).strip()[:6] for r in rows if r["code"])
-                except Exception:
+                except Exception as e:
+                    logger.warning("Failed to query table %s for hot stock codes: %s", table, e)
                     continue
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to load hot stock codes from DB: %s", e)
 
     if not codes:
         codes = [

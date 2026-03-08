@@ -6,12 +6,15 @@
 数据源：东方财富
 """
 
+import logging
 import sqlite3
 import sys
 import time
 import requests
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -26,8 +29,7 @@ EM_NORTH_API = "https://push2.eastmoney.com/api/qt/clist/get"
 
 def log(msg: str):
     """格式化输出日志信息。"""
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+    logger.info(msg)
 
 
 def init_north_money_table():
@@ -222,9 +224,9 @@ def fetch_north_fund_flow():
                     datetime.now().isoformat()
                 ))
                 count += 1
-            except Exception:
-                pass
-        
+            except Exception as e:
+                logger.warning("保存北向资金流向记录失败: %s", e)
+
         conn.commit()
         log(f"   ✅ 保存 {count} 条资金流向记录")
         return count

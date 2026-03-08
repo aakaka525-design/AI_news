@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Menu, TrendingUp } from "lucide-react";
+import { Menu, TrendingUp, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -23,9 +23,14 @@ export function Header() {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-56 p-0">
-          <div className="flex h-14 items-center border-b px-4 font-semibold">
-            <TrendingUp className="mr-2 h-5 w-5" />
-            AI News
+          <div className="flex h-14 items-center justify-between border-b px-4 font-semibold">
+            <span className="flex items-center">
+              <TrendingUp className="mr-2 h-5 w-5" />
+              AI News
+            </span>
+            <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="关闭菜单">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
           <nav className="overflow-y-auto p-2">
             {navGroups.map((group, gi) => (

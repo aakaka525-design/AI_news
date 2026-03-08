@@ -4,11 +4,21 @@ AI News - 数据库连接公共模块
 
 提供统一的数据库连接管理和数据验证入库功能。
 """
+import re
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import TypeVar, Type, Optional, Any
 from pydantic import BaseModel, ValidationError
+
+_VALID_SQL_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate that a string is a safe SQL identifier."""
+    if not _VALID_SQL_IDENTIFIER.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
 
 # 使用统一配置路径 (修正为项目根目录)
 STOCKS_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "stocks.db"
@@ -39,6 +49,7 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 
 def _create_or_replace_view(conn: sqlite3.Connection, view_name: str, select_sql: str) -> None:
+    _validate_identifier(view_name)
     existing = _object_type(conn, view_name)
     if existing == "table":
         return
@@ -193,6 +204,7 @@ def _ensure_compat_views(conn: sqlite3.Connection) -> None:
             elif _table_exists(conn, "money_flow"):
                 source_table = "money_flow"
             if source_table:
+                _validate_identifier(source_table)
                 _create_or_replace_view(
                     conn,
                     "main_money_flow",
@@ -445,8 +457,11 @@ def insert_validated(
         是否成功
     """
     try:
+        _validate_identifier(table)
         data = record.model_dump(exclude_none=False)
         columns = list(data.keys())
+        for col in columns:
+            _validate_identifier(col)
         placeholders = ["?" for _ in columns]
         values = [
             data[c] if not isinstance(data[c], datetime) else data[c].isoformat()
@@ -454,6 +469,8 @@ def insert_validated(
         ]
 
         if unique_keys:
+            for uk in unique_keys:
+                _validate_identifier(uk)
             conflict_cols = ", ".join(unique_keys)
             update_cols = [c for c in columns if c not in unique_keys]
             if update_cols:
@@ -501,11 +518,14 @@ def batch_insert_validated(
     Returns:
         成功插入的记录数
     """
+    _validate_identifier(table)
     count = 0
-    for i, record in enumerate(records):
-        if insert_validated(conn, table, record, unique_keys):
-            count += 1
-        if (i + 1) % commit_every == 0:
-            conn.commit()
-    conn.commit()  # 最后一批
+    try:
+        for i, record in enumerate(records):
+            if insert_validated(conn, table, record, unique_keys):
+                count += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return count

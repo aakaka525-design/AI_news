@@ -3,26 +3,36 @@ AI News Dashboard - FastAPI 服务
 接收 TrendRadar Webhook 推送，清洗、存储并展示热点新闻
 """
 
+import hmac
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)s [%(name)s] %(message)s',
+    level=os.getenv("LOG_LEVEL", "INFO"),
+)
+logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Header, Query
+from fastapi import Path as FastPath
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
+from starlette.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import bleach
 import markdown
 
 # 导入响应模型
-from api.schemas import NewsListResponse, WebhookResponse
+from api.schemas import HealthResponse, NewsListResponse, WebhookResponse
 
 # 导入数据清洗模块
 from src.analysis.cleaner import clean_raw_data, clean_and_export, CleanedData
@@ -59,14 +69,35 @@ _stock_repo = StockRepository(_stock_Session)
 
 app = FastAPI(title="AI News Dashboard", version="2.0.0")
 
+# ---- 请求体大小限制中间件 (P1 安全修复) ----
+class LimitRequestSizeMiddleware:
+    """拒绝超过 max_size 字节的请求体，防止大载荷攻击。"""
+
+    def __init__(self, app, max_size: int = 10 * 1024 * 1024):
+        self.app = app
+        self.max_size = max_size
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            content_length = headers.get(b"content-length")
+            if content_length and int(content_length) > self.max_size:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+app.add_middleware(LimitRequestSizeMiddleware)
+
 from fastapi.middleware.cors import CORSMiddleware
 
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://frontend:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://frontend:3000",
-    ],
+    allow_origins=[o.strip() for o in _cors_origins if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -141,6 +172,14 @@ class AnalyzeRequest(BaseModel):
     """AI 分析请求"""
     date: str  # 格式: 2026-01-16
     limit: int = 20  # 最多分析条数
+
+    @field_validator('date')
+    @classmethod
+    def validate_date_format(cls, v: str) -> str:
+        import re
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', v):
+            raise ValueError('日期格式必须为 YYYY-MM-DD')
+        return v
 
 
 # ============================================================
@@ -231,7 +270,7 @@ async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
             )
         # 未配置 Key 时跳过验证（开发模式）
         return None
-    if x_api_key != DASHBOARD_API_KEY:
+    if not hmac.compare_digest(x_api_key or "", DASHBOARD_API_KEY):
         raise HTTPException(status_code=401, detail="Invalid or missing API Key")
     return x_api_key
 
@@ -240,15 +279,14 @@ async def verify_webhook_token(x_webhook_token: str = Header(None, alias="X-Webh
     """可选 Webhook Token 校验。"""
     if not WEBHOOK_SECRET:
         return None
-    if x_webhook_token != WEBHOOK_SECRET:
+    if not hmac.compare_digest(x_webhook_token or "", WEBHOOK_SECRET):
         raise HTTPException(status_code=401, detail="Invalid webhook token")
     return x_webhook_token
 
 
-# 任务执行锁 (P2 防重入)
+# 任务执行锁 (P2 防重入) — 用 Lock 保证原子性
 import asyncio
 _task_lock = asyncio.Lock()
-_task_running = False
 
 
 # ============================================================
@@ -263,15 +301,15 @@ async def startup():
     _repo.create_tables(_engine)
     PolymarketBase.metadata.create_all(_engine)
     from config.settings import NEWS_DATABASE_URL as _news_db_url
-    print(f"📦 数据库初始化完成: {_news_db_url}")
-    print(f"🧹 数据清洗模块已加载")
+    logger.info("数据库初始化完成: %s", _news_db_url)
+    logger.info("数据清洗模块已加载")
     
     # 检查 AI 分析是否可用
     analyzer = create_analyzer_from_env()
     if analyzer:
-        print(f"🤖 AI 分析模块已启用")
+        logger.info("AI 分析模块已启用")
     else:
-        print(f"⚠️ AI 分析模块未启用 (设置 AI_ANALYSIS_ENABLED=true)")
+        logger.warning("AI 分析模块未启用 (设置 AI_ANALYSIS_ENABLED=true)")
     
     # 启动调度器
     try:
@@ -279,11 +317,11 @@ async def startup():
         scheduler_manager.start()
         SCHEDULER_STATUS["running"] = True
         SCHEDULER_STATUS["error"] = None
-        print(f"📅 调度器已启动")
+        logger.info("调度器已启动")
     except Exception as e:
         SCHEDULER_STATUS["running"] = False
         SCHEDULER_STATUS["error"] = str(e)
-        print(f"⚠️ 调度器启动失败: {e}")
+        logger.warning("调度器启动失败: %s", e)
         if os.getenv("SCHEDULER_REQUIRED", "false").lower() == "true":
             raise
 
@@ -292,7 +330,7 @@ async def shutdown():
     """关闭时停止调度器"""
     scheduler_manager.stop()
     SCHEDULER_STATUS["running"] = False
-    print(f"⏹️ 调度器已停止")
+    logger.info("调度器已停止")
 
 
 @asynccontextmanager
@@ -328,9 +366,9 @@ async def receive_webhook(
     news_id = save_news(payload.title, payload.content, cleaned)
     received_at = datetime.now().isoformat()
     
-    print(f"✅ 收到推送 #{news_id}: {payload.title[:50]}...")
-    print(f"   热点: {cleaned.hotspots}")
-    print(f"   关键词: {cleaned.keywords[:5]}")
+    logger.info("收到推送 #%d: %s...", news_id, payload.title[:50])
+    logger.info("   热点: %s", cleaned.hotspots)
+    logger.info("   关键词: %s", cleaned.keywords[:5])
     
     return {
         "status": "ok",
@@ -364,18 +402,18 @@ async def analyze_opportunities(request: AnalyzeRequest, _: None = Depends(verif
     # 创建分析器
     analyzer = create_analyzer_from_env()
     if not analyzer:
-        return {
-            "error": "AI 分析未启用",
-            "hint": "请在 .env 中设置 AI_ANALYSIS_ENABLED=true 和 AI_API_KEY"
-        }
-    
+        raise HTTPException(
+            status_code=503,
+            detail="AI 分析未启用，请在 .env 中设置 AI_ANALYSIS_ENABLED=true 和 AI_API_KEY",
+        )
+
     # 查询数据
     news_items = await run_in_threadpool(get_news_by_date, request.date, request.limit)
     if not news_items:
-        return {
-            "error": f"未找到 {request.date} 的新闻数据",
-            "hint": "请确认该日期有数据，或检查日期格式 (YYYY-MM-DD)"
-        }
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到 {request.date} 的新闻数据，请确认该日期有数据",
+        )
     
     # 调用 AI 分析 (async + await)
     result = await analyzer.analyze_opportunities(news_items)
@@ -459,9 +497,9 @@ async def api_facts(news_id: int):
     return row["cleaned_data"]
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health():
-    """健康检查"""
+    """健康检查 - 返回 503 当任何组件异常"""
     db_ok = True
     db_error = None
     try:
@@ -471,8 +509,9 @@ async def health():
         db_error = str(e)
 
     scheduler_ok = bool(SCHEDULER_STATUS["running"])
-    status = "healthy" if db_ok and scheduler_ok else "degraded"
-    return {
+    all_healthy = db_ok and scheduler_ok
+    status = "healthy" if all_healthy else "degraded"
+    payload = {
         "status": status,
         "db": {"ok": db_ok, "error": db_error},
         "scheduler": {
@@ -481,6 +520,7 @@ async def health():
         },
         "version": "2.0.0",
     }
+    return JSONResponse(content=payload, status_code=200 if all_healthy else 503)
 
 
 # ============================================================
@@ -631,16 +671,14 @@ async def run_scheduled_task(
     
     流程：RSS 抓取 → 数据加载 → AI 分析 → 存储
     """
-    global _task_running
-
     from datetime import datetime
 
-    # 防重入检查与状态置位必须在同一临界区内，避免并发竞态
+    # 非阻塞获取锁：locked() 检查与 acquire() 之间无 await，
+    # 在 asyncio 单线程模型中是原子的（无 yield point）。
+    # 若已被占用则立即拒绝，不排队等待。
+    if _task_lock.locked():
+        raise HTTPException(status_code=409, detail="任务正在执行中，请稍后重试")
     async with _task_lock:
-        if _task_running:
-            raise HTTPException(status_code=409, detail="任务正在执行中，请稍后重试")
-        _task_running = True
-    try:
         result = {
             "start_time": datetime.now().isoformat(),
             "steps": []
@@ -666,7 +704,7 @@ async def run_scheduled_task(
                 items = [{"id": r["id"], "title": r["title"], "content": r.get("summary", "")} for r in rss_items]
                 data_source = "rss"
         except Exception as e:
-            print(f"⚠️ RSS 加载失败: {e}")
+            logger.warning("RSS 加载失败: %s", e)
 
         if not items:
             try:
@@ -675,19 +713,17 @@ async def run_scheduled_task(
                     items = news_rows
                     data_source = "news"
             except Exception as e:
-                print(f"⚠️ News 加载失败: {e}")
+                logger.warning("News 加载失败: %s", e)
 
         if not items:
-            result["error"] = "没有可用数据"
-            return result
+            raise HTTPException(status_code=404, detail="没有可用数据，请先抓取 RSS 或导入新闻")
 
         result["steps"].append({"step": "load_data", "status": "ok", "source": data_source, "count": len(items)})
 
         # Step 3: AI 分析
         analyzer = create_analyzer_from_env()
         if not analyzer:
-            result["error"] = "AI 分析器未配置"
-            return result
+            raise HTTPException(status_code=503, detail="AI 分析器未配置，请设置 AI_ANALYSIS_ENABLED=true")
 
         try:
             analysis = await analyzer.analyze_opportunities(items)
@@ -718,9 +754,6 @@ async def run_scheduled_task(
         result["opportunities_count"] = len(analysis.get("opportunities", []))
 
         return result
-    finally:
-        async with _task_lock:
-            _task_running = False
 
 
 # ============================================================
@@ -729,7 +762,7 @@ async def run_scheduled_task(
 
 @app.get("/api/research/reports")
 async def get_research_reports(
-    stock_code: str = None,
+    stock_code: Optional[str] = Query(None, pattern=r'^\d{6}$'),
     limit: int = Query(20, ge=1, le=500),
 ):
     """获取研报列表"""
@@ -748,7 +781,7 @@ async def get_research_reports(
 
 @app.post("/api/research/fetch")
 async def fetch_research_reports(
-    stock_code: str = None,
+    stock_code: Optional[str] = Query(None, pattern=r'^\d{6}$'),
     limit: int = Query(30, ge=1, le=500),
     _: None = Depends(verify_api_key),
 ):
@@ -783,7 +816,7 @@ async def get_research_stats():
 
 @app.get("/api/anomalies")
 async def get_anomalies(
-    stock_code: str = None,
+    stock_code: Optional[str] = Query(None, pattern=r'^\d{6}$'),
     days: int = Query(7, ge=1, le=365),
     limit: int = Query(50, ge=1, le=500),
 ):
@@ -803,7 +836,7 @@ async def get_anomalies(
 
 @app.post("/api/anomalies/detect")
 async def detect_anomalies(
-    stock_code: str = None,
+    stock_code: Optional[str] = Query(None, pattern=r'^\d{6}$'),
     limit: int = Query(50, ge=1, le=500),
     _: None = Depends(verify_api_key),
 ):
@@ -867,7 +900,7 @@ async def check_data_freshness():
 # ============================================================
 
 @app.get("/api/calendar/is_trading_day")
-async def is_trading_day(date: str = None):
+async def is_trading_day(date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$')):
     """判断是否为交易日"""
     try:
         from fetchers.trading_calendar import (
@@ -917,7 +950,7 @@ async def get_stock_industries():
 
 
 @app.get("/api/stocks/{ts_code}/profile")
-async def get_stock_profile(ts_code: str):
+async def get_stock_profile(ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$')):
     """个股档案 + 估值指标"""
     profile = await run_in_threadpool(_stock_repo.get_stock_profile, ts_code)
     if not profile:
@@ -927,7 +960,7 @@ async def get_stock_profile(ts_code: str):
 
 @app.get("/api/stocks/{ts_code}/valuation-history")
 async def get_valuation_history(
-    ts_code: str,
+    ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
     limit: int = Query(250, ge=1, le=1000),
 ):
     """个股估值历史"""
@@ -939,9 +972,9 @@ async def get_valuation_history(
 
 @app.get("/api/stocks/{ts_code}/daily")
 async def get_stock_daily(
-    ts_code: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
+    start_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    end_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
     limit: int = Query(250, ge=1, le=1000),
 ):
     """个股日线行情"""
@@ -952,7 +985,7 @@ async def get_stock_daily(
 
 
 @app.get("/api/market/overview")
-async def get_market_overview(trade_date: Optional[str] = None):
+async def get_market_overview(trade_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$')):
     """大盘指数概览"""
     data = await run_in_threadpool(_stock_repo.get_market_overview, trade_date)
     return {"data": data}
@@ -960,9 +993,9 @@ async def get_market_overview(trade_date: Optional[str] = None):
 
 @app.get("/api/money-flow")
 async def get_money_flow(
-    trade_date: Optional[str] = None,
+    trade_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
     flow_type: Optional[str] = None,
-    ts_code: Optional[str] = None,
+    ts_code: Optional[str] = Query(None, pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
     limit: int = Query(50, ge=1, le=200),
 ):
     """资金流向"""
@@ -974,8 +1007,8 @@ async def get_money_flow(
 
 @app.get("/api/dragon-tiger")
 async def get_dragon_tiger(
-    trade_date: Optional[str] = None,
-    ts_code: Optional[str] = None,
+    trade_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    ts_code: Optional[str] = Query(None, pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
     limit: int = Query(50, ge=1, le=200),
 ):
     """龙虎榜"""
@@ -988,7 +1021,7 @@ async def get_dragon_tiger(
 @app.get("/api/sectors")
 async def get_sectors(
     block_type: Optional[str] = None,
-    trade_date: Optional[str] = None,
+    trade_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
     limit: int = Query(50, ge=1, le=200),
 ):
     """板块行情"""

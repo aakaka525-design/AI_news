@@ -107,7 +107,7 @@ def parse_json_response(text: str):
         except json.JSONDecodeError:
             pass
 
-    # 3. 非贪婪正则提取 JSON 对象或数组
+    # 3. 贪婪正则提取 JSON 对象或数组（贪婪匹配保留嵌套结构）
     # 先尝试数组
     array_match = re.search(r"\[[\s\S]*\]", text)
     if array_match:
@@ -121,6 +121,21 @@ def parse_json_response(text: str):
     if obj_match:
         try:
             return json.loads(obj_match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # 4. 回退：从最后一个 { 或 [ 尝试解析（处理多 JSON 块场景）
+    last_brace = text.rfind("{")
+    if last_brace >= 0:
+        try:
+            return json.loads(text[last_brace:])
+        except json.JSONDecodeError:
+            pass
+
+    last_bracket = text.rfind("[")
+    if last_bracket >= 0:
+        try:
+            return json.loads(text[last_bracket:])
         except json.JSONDecodeError:
             pass
 

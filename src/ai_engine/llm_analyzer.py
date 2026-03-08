@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from typing import Optional
 from google import genai
 from google.genai.types import GenerateContentConfig
@@ -44,10 +45,11 @@ DANGEROUS_PATTERNS = [
 ]
 
 def sanitize_for_prompt(text: str) -> str:
-    """清理可能的 Prompt Injection 载荷"""
+    """清理可能的 Prompt Injection 载荷（含 Unicode 全角字符归一化）"""
     if not text:
         return ""
-    result = text
+    # 先做 NFKC 归一化，将全角字符（如 ＳＹＳＴＥＭ）还原为半角（SYSTEM）
+    result = unicodedata.normalize("NFKC", text)
     for pattern in DANGEROUS_PATTERNS:
         result = pattern.sub('[FILTERED]', result)
     return result
@@ -184,7 +186,7 @@ def create_analyzer_from_env() -> Optional[AIAnalyzer]:
 
     client = get_gemini_client()
     if not client:
-        print("⚠️ GEMINI_API_KEY 未配置")
+        logger.warning("GEMINI_API_KEY 未配置")
         return None
 
     model = get_default_model()

@@ -11,12 +11,15 @@
 存入 stocks.db 数据库（与板块数据同库）
 """
 
+import logging
 import sqlite3
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import akshare as ak
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
@@ -111,12 +114,12 @@ def init_fund_flow_tables():
     
     conn.commit()
     conn.close()
-    print("✅ 资金流向表初始化完成")
+    logger.info("资金流向表初始化完成")
 
 
 def fetch_hsgt_fund_flow():
     """获取沪深股通资金流向"""
-    print("\n📈 获取沪深股通资金流向...")
+    logger.info("获取沪深股通资金流向...")
     try:
         df = ak.stock_hsgt_fund_flow_summary_em()
         conn = get_connection()
@@ -144,20 +147,20 @@ def fetch_hsgt_fund_flow():
                 ))
                 count += 1
             except Exception as e:
-                print(f"  ⚠️ 保存失败: {e}")
-        
+                logger.warning("保存沪深股通记录失败: %s", e)
+
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条沪深股通数据")
+        logger.info("保存 %d 条沪深股通数据", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取沪深股通资金流向失败: %s", e)
         return 0
 
 
 def fetch_lhb_institution(days: int = 30):
     """获取龙虎榜机构买卖统计"""
-    print(f"\n🐉 获取龙虎榜机构买卖统计（近{days}天）...")
+    logger.info("获取龙虎榜机构买卖统计（近%d天）...", days)
     try:
         end_date = datetime.now().strftime("%Y%m%d")
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
@@ -195,14 +198,14 @@ def fetch_lhb_institution(days: int = 30):
                 ))
                 count += 1
             except Exception as e:
-                print(f"  ⚠️ 保存失败: {e}")
-        
+                logger.warning("保存龙虎榜机构记录失败: %s", e)
+
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条龙虎榜机构数据")
+        logger.info("保存 %d 条龙虎榜机构数据", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取龙虎榜机构数据失败: %s", e)
         return 0
 
 
@@ -216,7 +219,7 @@ def fetch_lhb_trader(days: int = 30):
     else:
         symbol = "近一月"
     
-    print(f"\n💰 获取龙虎榜营业部统计（{symbol}）...")
+    logger.info("获取龙虎榜营业部统计（%s）...", symbol)
     try:
         df = ak.stock_lhb_traderstatistic_em(symbol=symbol)
         conn = get_connection()
@@ -249,20 +252,20 @@ def fetch_lhb_trader(days: int = 30):
                 ))
                 count += 1
             except Exception as e:
-                print(f"  ⚠️ 保存失败: {e}")
-        
+                logger.warning("保存营业部记录失败: %s", e)
+
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条营业部数据")
+        logger.info("保存 %d 条营业部数据", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ 获取失败: {e}")
+        logger.warning("获取龙虎榜营业部数据失败: %s", e)
         return 0
 
 
 def fetch_shareholder_count():
     """获取股东户数变化（使用 tinyshare/Tushare API）"""
-    print("\n👥 获取股东户数变化 via Tushare...")
+    logger.info("获取股东户数变化 via Tushare...")
     try:
         from src.data_ingestion.tushare.client import get_tushare_client
 
@@ -274,7 +277,7 @@ def fetch_shareholder_count():
 
         df = client.stk_holdernumber(start_date=start_date, end_date=end_date)
         if df is None or df.empty:
-            print("   ⚠️ 无数据返回")
+            logger.warning("股东户数: 无数据返回")
             return 0
 
         # 去除 holder_num 为 NaN 的行
@@ -324,15 +327,15 @@ def fetch_shareholder_count():
                     datetime.now().isoformat()
                 ))
                 count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("保存股东户数记录失败 %s: %s", stock_code, e)
 
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条股东户数数据")
+        logger.info("保存 %d 条股东户数数据", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ Tushare 获取失败({e})，回退到 akshare...")
+        logger.warning("Tushare 获取失败(%s)，回退到 akshare...", e)
         return _fetch_shareholder_count_akshare()
 
 
@@ -365,38 +368,38 @@ def _fetch_shareholder_count_akshare():
                     datetime.now().isoformat()
                 ))
                 count += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("保存股东户数记录失败(akshare): %s", e)
         conn.commit()
         conn.close()
-        print(f"   ✅ 保存 {count} 条股东户数数据 (akshare)")
+        logger.info("保存 %d 条股东户数数据 (akshare)", count)
         return count
     except Exception as e:
-        print(f"   ⚠️ akshare 也失败: {e}")
+        logger.warning("akshare 也失败: %s", e)
         return 0
 
 
 def print_stats():
     """打印统计信息"""
     conn = get_connection()
-    
-    print("\n📈 资金流向数据统计:")
-    
+
+    logger.info("资金流向数据统计:")
+
     tables = [
         ("hsgt_fund_flow", "沪深股通"),
         ("lhb_institution", "龙虎榜机构"),
         ("lhb_trader", "营业部游资"),
         ("shareholder_count", "股东户数"),
     ]
-    
+
     for table, name in tables:
         try:
             cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
             count = cursor.fetchone()[0]
-            print(f"   {name}: {count} 条")
+            logger.info("   %s: %d 条", name, count)
         except Exception:  # noqa: BLE001
-            print(f"   {name}: 0 条")
-    
+            logger.info("   %s: 0 条", name)
+
     conn.close()
 
 
