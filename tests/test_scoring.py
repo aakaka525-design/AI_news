@@ -115,6 +115,19 @@ class TestExclusions:
         assert "000001.SZ" not in exclusions
         conn.close()
 
+    def test_null_list_status_not_excluded(self):
+        """list_status IS NULL 应视为正常上市股票（真实库现状）"""
+        conn = _create_test_db()
+        conn.execute(
+            "INSERT INTO ts_stock_basic VALUES ('000001.SZ', '平安银行', NULL, '19910403', '银行')"
+        )
+        conn.commit()
+
+        from src.scoring.exclusions import get_exclusions
+        exclusions = get_exclusions(conn)
+        assert "000001.SZ" not in exclusions
+        conn.close()
+
 
 # ============================================================
 # 因子计算器测试 (mock DB)
@@ -123,10 +136,16 @@ class TestExclusions:
 class TestFactors:
     def _create_factor_db(self):
         conn = _create_test_db()
-        # stock_rps
+        # stock_rps (真实 schema: stock_code/date)
         conn.execute("""
             CREATE TABLE stock_rps (
-                ts_code TEXT, trade_date TEXT, rps_20 REAL
+                stock_code TEXT, date TEXT, rps_20 REAL
+            )
+        """)
+        # screen_rps_snapshot (真实库中存在, 用 ts_code)
+        conn.execute("""
+            CREATE TABLE screen_rps_snapshot (
+                ts_code TEXT, snapshot_date TEXT, rps_20 REAL
             )
         """)
         # ts_daily
@@ -143,9 +162,10 @@ class TestFactors:
         """)
         return conn
 
-    def test_rps_composite_available(self):
+    def test_rps_from_snapshot(self):
+        """优先从 screen_rps_snapshot 读取 RPS"""
         conn = self._create_factor_db()
-        conn.execute("INSERT INTO stock_rps VALUES ('000001.SZ', '20260308', 85.0)")
+        conn.execute("INSERT INTO screen_rps_snapshot VALUES ('000001.SZ', '2026-03-08', 85.0)")
         conn.commit()
 
         from src.scoring.factors import compute_rps_composite
@@ -153,6 +173,20 @@ class TestFactors:
         assert result.available is True
         assert result.raw_value == 85.0
         assert result.normalized_value == 0.85
+        assert result.source_table == "screen_rps_snapshot"
+        conn.close()
+
+    def test_rps_fallback_to_stock_rps(self):
+        """screen_rps_snapshot 无数据时 fallback 到 stock_rps"""
+        conn = self._create_factor_db()
+        conn.execute("INSERT INTO stock_rps VALUES ('000001', '20260308', 75.0)")
+        conn.commit()
+
+        from src.scoring.factors import compute_rps_composite
+        result = compute_rps_composite("000001.SZ", "20260308", conn)
+        assert result.available is True
+        assert result.raw_value == 75.0
+        assert result.source_table == "stock_rps"
         conn.close()
 
     def test_rps_composite_missing(self):

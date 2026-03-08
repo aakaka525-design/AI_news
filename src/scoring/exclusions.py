@@ -17,9 +17,9 @@ def get_exclusions(conn: sqlite3.Connection) -> dict[str, str]:
     """返回 {ts_code: reason} 映射，包含所有应排除的股票。"""
     exclusions: dict[str, str] = {}
 
-    # 1. 退市 (list_status != 'L')
+    # 1. 退市 (list_status 明确非 'L' 且非 NULL)
     rows = conn.execute(
-        "SELECT ts_code FROM ts_stock_basic WHERE list_status != 'L'"
+        "SELECT ts_code FROM ts_stock_basic WHERE list_status IS NOT NULL AND list_status != 'L'"
     ).fetchall()
     for row in rows:
         exclusions[row["ts_code"]] = "delisted"
@@ -73,7 +73,7 @@ def _add_new_listing_exclusions(
     cutoff_yyyymmdd = cutoff_date.replace("-", "")
 
     rows = conn.execute(
-        "SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L' AND list_date > ?",
+        "SELECT ts_code FROM ts_stock_basic WHERE (list_status = 'L' OR list_status IS NULL) AND list_date > ?",
         (cutoff_yyyymmdd,),
     ).fetchall()
     for row in rows:

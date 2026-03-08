@@ -41,17 +41,46 @@ class FactorResult:
 # ============================================================
 
 def compute_rps_composite(ts_code: str, trade_date: str, conn: sqlite3.Connection) -> FactorResult:
-    """查询 stock_rps 表最新 rps_20，归一化 = rps_20 / 100。"""
-    row = conn.execute(
-        "SELECT rps_20, trade_date FROM stock_rps WHERE ts_code = ? AND trade_date <= ? ORDER BY trade_date DESC LIMIT 1",
-        (ts_code, trade_date),
-    ).fetchone()
+    """查询 RPS 数据，优先 screen_rps_snapshot，fallback stock_rps。"""
+    row = None
+    source_table = "screen_rps_snapshot"
+    data_date = None
+
+    # 优先: screen_rps_snapshot (真实库中存在, 用 ts_code)
+    try:
+        # trade_date YYYYMMDD → snapshot_date YYYY-MM-DD
+        sd = f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}" if len(trade_date) == 8 else trade_date
+        row = conn.execute(
+            "SELECT rps_20, snapshot_date FROM screen_rps_snapshot "
+            "WHERE ts_code = ? AND snapshot_date <= ? ORDER BY snapshot_date DESC LIMIT 1",
+            (ts_code, sd),
+        ).fetchone()
+        if row and row["rps_20"] is not None:
+            data_date_raw = str(row["snapshot_date"])
+            data_date = data_date_raw.replace("-", "")
+    except Exception:
+        row = None
+
+    # Fallback: stock_rps (历史 schema, 用 stock_code/date)
+    if not row or row["rps_20"] is None:
+        try:
+            stock_code = ts_code.split(".")[0]  # 000001.SZ → 000001
+            row = conn.execute(
+                "SELECT rps_20, date FROM stock_rps "
+                "WHERE stock_code = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+                (stock_code, trade_date),
+            ).fetchone()
+            if row and row["rps_20"] is not None:
+                source_table = "stock_rps"
+                data_date = str(row["date"]).replace("-", "")
+        except Exception:
+            row = None
 
     if not row or row["rps_20"] is None:
         return FactorResult(
             factor_key="rps_composite", bucket="price_trend", available=False,
             raw_value=None, normalized_value=None,
-            source_key="tushare", source_table="stock_rps",
+            source_key="derived", source_table=source_table,
             data_date=None, freshness_class="daily_market",
         )
 
@@ -59,8 +88,8 @@ def compute_rps_composite(ts_code: str, trade_date: str, conn: sqlite3.Connectio
     return FactorResult(
         factor_key="rps_composite", bucket="price_trend", available=True,
         raw_value=rps_20, normalized_value=rps_20 / 100.0,
-        source_key="tushare", source_table="stock_rps",
-        data_date=row["trade_date"], freshness_class="daily_market",
+        source_key="derived", source_table=source_table,
+        data_date=data_date, freshness_class="daily_market",
     )
 
 

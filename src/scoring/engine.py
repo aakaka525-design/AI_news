@@ -260,7 +260,7 @@ def compute_all_scores(trade_date: str) -> BatchScoreSummary:
 
         # 获取所有股票
         all_stocks = conn.execute(
-            "SELECT ts_code FROM ts_stock_basic WHERE list_status = 'L'"
+            "SELECT ts_code FROM ts_stock_basic WHERE (list_status = 'L' OR list_status IS NULL)"
         ).fetchall()
         all_codes = [r["ts_code"] for r in all_stocks]
 
