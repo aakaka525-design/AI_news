@@ -11,20 +11,26 @@ load_dotenv()
 
 
 def _env_int(key: str, default: int) -> int:
-    """Safely parse integer environment variable."""
-    val = os.getenv(key, "")
+    """安全解析整数环境变量。"""
     try:
-        return int(val) if val else default
-    except ValueError:
+        return int(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
         return default
 
+def _env_bool(key: str, default: bool = False) -> bool:
+    """安全解析布尔环境变量。"""
+    val = os.getenv(key, "").lower()
+    if val in ("1", "true", "yes", "on"):
+        return True
+    if val in ("0", "false", "no", "off", ""):
+        return default
+    return default
 
 def _env_float(key: str, default: float) -> float:
-    """Safely parse float environment variable."""
-    val = os.getenv(key, "")
+    """安全解析浮点环境变量。"""
     try:
-        return float(val) if val else default
-    except ValueError:
+        return float(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
         return default
 
 # 项目根目录
@@ -66,6 +72,6 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 SCHEDULER_TIMEZONE = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai")
 
 # Polymarket 配置
-POLYMARKET_ENABLED = os.getenv("POLYMARKET_ENABLED", "true").lower() == "true"
+POLYMARKET_ENABLED = _env_bool("POLYMARKET_ENABLED", True)
 POLYMARKET_FETCH_INTERVAL = _env_int("POLYMARKET_FETCH_INTERVAL", 5)
 POLYMARKET_VOLATILITY_THRESHOLD = _env_float("POLYMARKET_VOLATILITY_THRESHOLD", 0.10)

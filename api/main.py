@@ -1151,7 +1151,7 @@ async def export_screen_potential_csv():
 
 
 @app.get("/api/analysis/full/{ts_code}")
-async def get_full_analysis(ts_code: str):
+async def get_full_analysis(ts_code: str = FastPath(..., pattern=r'^\d{6}(\.[A-Z]{2})?$')):
     """获取个股完整分析快照（缓存 + 懒生成）"""
     from src.utils.cache import cache
     from src.strategies.snapshot_service import get_analysis_snapshot, ensure_snapshot_tables
@@ -1192,7 +1192,7 @@ async def unified_search(
 
 
 @app.get("/api/intraday/{ts_code}")
-async def get_intraday(ts_code: str):
+async def get_intraday(ts_code: str = FastPath(..., pattern=r'^\d{6}\.[A-Z]{2}$')):
     """获取个股最新盘中快照"""
     from src.database.connection import get_connection
     conn = get_connection()
