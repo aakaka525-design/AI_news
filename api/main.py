@@ -3,7 +3,9 @@ AI News Dashboard - FastAPI 服务
 接收 TrendRadar Webhook 推送，清洗、存储并展示热点新闻
 """
 
+import csv
 import hmac
+import io
 import json
 import logging
 import os
@@ -24,7 +26,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi import FastAPI, Request, Depends, HTTPException, Header, Query
 from fastapi import Path as FastPath
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
@@ -1029,6 +1031,194 @@ async def get_screen_potential(
                 "trading_score": r[4], "fundamental_score": r[5],
                 "technical_score": r[6], "signals": r[7], "rank": r[8]
             } for r in items]
+        }
+    finally:
+        conn.close()
+
+
+# ============================================================
+# 筛选器 CSV 导出 API
+# ============================================================
+
+
+@app.get("/api/stocks/{ts_code}/daily/export")
+async def export_stock_daily_csv(
+    ts_code: str = FastPath(..., pattern=r'^\d{6}\.(SH|SZ|BJ)$'),
+    start_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    end_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+):
+    """导出个股日线数据为 CSV"""
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        sql = "SELECT trade_date, open, high, low, close, vol, amount, pct_chg FROM ts_daily WHERE ts_code = ?"
+        params: list = [ts_code]
+        if start_date:
+            sql += " AND trade_date >= ?"
+            params.append(start_date.replace("-", ""))
+        if end_date:
+            sql += " AND trade_date <= ?"
+            params.append(end_date.replace("-", ""))
+        sql += " ORDER BY trade_date ASC"
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
+    writer = csv.writer(output)
+    writer.writerow(["trade_date", "open", "high", "low", "close", "vol", "amount", "pct_chg"])
+    for r in rows:
+        writer.writerow([r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]])
+
+    output.seek(0)
+    filename = f"{ts_code}_daily.csv"
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/screens/rps/export")
+async def export_screen_rps_csv():
+    """导出 RPS 强度排名最新快照为 CSV"""
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT snapshot_date FROM screen_rps_snapshot ORDER BY snapshot_date DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="无 RPS 快照数据")
+        snap_date = row[0]
+        rows = conn.execute(
+            "SELECT rank, ts_code, stock_name, rps_10, rps_20, rps_50, rps_120 FROM screen_rps_snapshot WHERE snapshot_date = ? ORDER BY rank ASC",
+            (snap_date,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
+    writer = csv.writer(output)
+    writer.writerow(["rank", "ts_code", "stock_name", "rps_10", "rps_20", "rps_50", "rps_120"])
+    for r in rows:
+        writer.writerow([r[0], r[1], r[2], r[3], r[4], r[5], r[6]])
+
+    output.seek(0)
+    filename = f"rps_{snap_date}.csv"
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/screens/potential/export")
+async def export_screen_potential_csv():
+    """导出多因子潜力股最新快照为 CSV"""
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT snapshot_date FROM screen_potential_snapshot ORDER BY snapshot_date DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="无潜力股快照数据")
+        snap_date = row[0]
+        rows = conn.execute(
+            "SELECT rank, ts_code, stock_name, total_score, capital_score, trading_score, fundamental_score, technical_score, signals FROM screen_potential_snapshot WHERE snapshot_date = ? ORDER BY rank ASC",
+            (snap_date,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM
+    writer = csv.writer(output)
+    writer.writerow(["rank", "ts_code", "stock_name", "total_score", "capital_score", "trading_score", "fundamental_score", "technical_score", "signals"])
+    for r in rows:
+        writer.writerow([r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]])
+
+    output.seek(0)
+    filename = f"potential_{snap_date}.csv"
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/analysis/full/{ts_code}")
+async def get_full_analysis(ts_code: str):
+    """获取个股完整分析快照（缓存 + 懒生成）"""
+    from src.utils.cache import cache
+    from src.strategies.snapshot_service import get_analysis_snapshot, ensure_snapshot_tables
+    ensure_snapshot_tables()
+
+    cache_key = f"analysis_full:{ts_code}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    result = get_analysis_snapshot(ts_code)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"无法生成 {ts_code} 的分析数据")
+
+    cache.set(cache_key, result)
+    return result
+
+
+# ============================================================
+# 统一搜索 API
+# ============================================================
+
+
+@app.get("/api/search")
+async def unified_search(
+    q: str = Query(..., min_length=1, max_length=50),
+    type: str = Query("all", pattern=r'^(stocks|news|all)$'),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """统一搜索：股票代码/名称 + 新闻标题/摘要"""
+    from src.utils.search import search
+    return await run_in_threadpool(search, q, type, limit)
+
+
+# ============================================================
+# 盘中数据 API
+# ============================================================
+
+
+@app.get("/api/intraday/{ts_code}")
+async def get_intraday(ts_code: str):
+    """获取个股最新盘中快照"""
+    from src.database.connection import get_connection
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT ts_code, price, change_pct, volume, amount, update_time "
+            "FROM intraday_snapshot WHERE ts_code = ? "
+            "ORDER BY update_time DESC LIMIT 1",
+            (ts_code,),
+        ).fetchone()
+
+        if not row:
+            return {
+                "ts_code": ts_code, "price": None, "change_pct": None,
+                "volume": None, "amount": None, "update_time": None,
+            }
+
+        return {
+            "ts_code": row[0], "price": row[1], "change_pct": row[2],
+            "volume": row[3], "amount": row[4], "update_time": str(row[5]),
+        }
+    except Exception:
+        # 表可能不存在（首次运行前）
+        return {
+            "ts_code": ts_code, "price": None, "change_pct": None,
+            "volume": None, "amount": None, "update_time": None,
         }
     finally:
         conn.close()

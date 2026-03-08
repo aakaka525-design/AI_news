@@ -231,30 +231,170 @@ def analyze_market():
     except Exception as e:
         logger.error("获取大盘数据失败: %s", e)
 
+def run_analysis(stock_code: str) -> dict:
+    """Run full analysis for a single stock, returning structured results.
+
+    Returns dict with keys: stock_code, generated_at, kline, pattern,
+    support_resistance, announcements, sector_rank, market.
+    """
+    global STOCK_CODE
+    original = STOCK_CODE
+    STOCK_CODE = stock_code
+    result: dict = {"stock_code": stock_code, "generated_at": datetime.now().isoformat()}
+
+    try:
+        # 1. K线数据
+        df = get_kline()
+        closes = df['收盘'].values
+        result["kline"] = {
+            "start": str(df['日期'].min()),
+            "end": str(df['日期'].max()),
+            "days": len(df),
+            "latest_close": float(closes[-1]),
+        }
+
+        # 2. 技术形态
+        metrics = analyze_pattern(df)
+        ma5 = float(pd.Series(closes).rolling(5).mean().iloc[-1])
+        ma10 = float(pd.Series(closes).rolling(10).mean().iloc[-1])
+        ma20 = float(metrics["ma20"])
+        volumes = df['成交量'].values
+        vol_ma5 = float(pd.Series(volumes).rolling(5).mean().iloc[-1])
+        vol_today = float(volumes[-1])
+        vol_ratio = vol_today / vol_ma5 if vol_ma5 else 0
+
+        if ma5 > ma10 > ma20:
+            ma_arrangement = "多头排列"
+        elif ma5 < ma10 < ma20:
+            ma_arrangement = "空头排列"
+        else:
+            ma_arrangement = "交叉/纠缠"
+
+        result["pattern"] = {
+            "price": float(metrics["price"]),
+            "ma5": ma5,
+            "ma10": ma10,
+            "ma20": ma20,
+            "ma_arrangement": ma_arrangement,
+            "above_ma20": float(metrics["price"]) > ma20,
+            "recent_high": float(metrics["recent_high"]),
+            "recent_low": float(metrics["recent_low"]),
+            "vol_ratio": round(vol_ratio, 2),
+        }
+
+        # 3. 支撑阻力
+        highs = df['最高'].values
+        lows = df['最低'].values
+        result["support_resistance"] = {
+            "R3": float(max(highs[-20:])),
+            "R2": float(max(highs[-10:])),
+            "R1": float(max(highs[-5:])),
+            "S1": float(min(lows[-5:])),
+            "S2": float(min(lows[-10:])),
+            "S3": float(ma20),
+        }
+
+        # 4. 公告
+        try:
+            ann_df = ak.stock_notice_report(symbol=stock_code)
+            announcements = []
+            if ann_df is not None and not ann_df.empty:
+                for _, row in ann_df.head(5).iterrows():
+                    announcements.append({
+                        "date": str(row.get('公告日期', row.get('date', ''))),
+                        "title": str(row.get('公告标题', row.get('title', ''))),
+                    })
+            result["announcements"] = announcements
+        except Exception as e:
+            logger.warning("获取公告失败: %s", e)
+            result["announcements"] = []
+
+        # 5. 板块排名
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.execute(
+                "SELECT sector_name, sector_type FROM sector_stocks "
+                "WHERE stock_code = ? AND sector_type IN ('行业', '概念')",
+                (stock_code,),
+            )
+            sectors_info = []
+            for sector_name, sector_type in cursor.fetchall()[:3]:
+                cursor2 = conn.execute(
+                    "SELECT ss.stock_code, s.name, r.rps_20 "
+                    "FROM sector_stocks ss "
+                    "JOIN stocks s ON ss.stock_code = s.code "
+                    "LEFT JOIN stock_rps r ON ss.stock_code = r.stock_code "
+                    "AND r.date = (SELECT MAX(date) FROM stock_rps) "
+                    "WHERE ss.sector_name = ? ORDER BY r.rps_20 DESC",
+                    (sector_name,),
+                )
+                stocks = cursor2.fetchall()
+                for rank, (code, name, rps) in enumerate(stocks, 1):
+                    if code == stock_code:
+                        sectors_info.append({
+                            "sector": sector_name,
+                            "type": sector_type,
+                            "rank": rank,
+                            "total": len(stocks),
+                            "rps_20": float(rps) if rps else None,
+                        })
+                        break
+            conn.close()
+            result["sector_rank"] = sectors_info
+        except Exception as e:
+            logger.warning("板块排名失败: %s", e)
+            result["sector_rank"] = []
+
+        # 6. 大盘环境
+        try:
+            idx_df = ak.stock_zh_index_daily(symbol="sh000001").tail(10)
+            latest = idx_df.iloc[-1]
+            prev = idx_df.iloc[-2]
+            change = (latest['close'] - prev['close']) / prev['close'] * 100
+            idx_ma5 = float(idx_df['close'].tail(5).mean())
+            result["market"] = {
+                "index": "上证指数",
+                "close": float(latest['close']),
+                "change_pct": round(change, 2),
+                "above_ma5": float(latest['close']) > idx_ma5,
+            }
+        except Exception as e:
+            logger.warning("大盘数据失败: %s", e)
+            result["market"] = None
+
+    except Exception as e:
+        logger.error("完整分析失败 %s: %s", stock_code, e)
+        result["error"] = str(e)
+    finally:
+        STOCK_CODE = original
+
+    return result
+
+
 def main():
     print("\n" + "=" * 60)
     print(f"  完整分析报告: {STOCK_CODE}")
     print(f"  生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
-    
+
     # 1. K线数据
     df = get_kline()
-    
+
     # 2. 技术形态
     metrics = analyze_pattern(df)
-    
+
     # 3. 支撑阻力
     calc_support_resistance(df, metrics)
-    
+
     # 4. 公告
     get_announcements()
-    
+
     # 5. 板块排名
     calc_sector_rank()
-    
+
     # 6. 大盘
     analyze_market()
-    
+
     print("\n" + "=" * 60)
     print("【分析完成】")
     print("=" * 60)

@@ -407,8 +407,8 @@ def get_connection(timeout: int = 30) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     # Only apply SQLite-specific PRAGMAs
     if _is_sqlite(conn):
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=30000;")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
     _ensure_compat_views(conn)
     return conn
 

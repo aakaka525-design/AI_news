@@ -84,6 +84,13 @@ TASK_CONFIGS = {
         "enabled": True,
         "description": "生成 RPS/潜力筛选日快照，清理过期数据"
     },
+    "intraday_snapshot": {
+        "name": "盘中快照轮询",
+        "trigger": "interval",
+        "minutes": 10,
+        "enabled": True,
+        "description": "盘中拉取实时行情快照（9:30-15:00 交易日）"
+    },
 }
 
 # Fill Polymarket config from centralized settings
@@ -421,5 +428,21 @@ def register_default_tasks():
         run_daily_snapshots()
 
     scheduler_manager.register_task("screen_snapshot", screen_snapshot_task)
+
+    # 注册盘中快照轮询任务
+    from fetchers.intraday import fetch_intraday_snapshot
+
+    def intraday_task():
+        # 仅在交易时段执行 (9:25-15:05 留余量)
+        from datetime import datetime as _dt
+        now = _dt.now()
+        hour_min = now.hour * 100 + now.minute
+        weekday = now.weekday()
+        if weekday >= 5 or hour_min < 925 or hour_min > 1505:
+            logger.debug("非交易时段，跳过盘中快照")
+            return
+        fetch_intraday_snapshot()
+
+    scheduler_manager.register_task("intraday_snapshot", intraday_task)
 
     logger.info("✅ 默认任务注册完成")

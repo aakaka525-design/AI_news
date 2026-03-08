@@ -43,6 +43,9 @@ structlog>=24.1.0
 # 重试
 tenacity>=8.2.0,<10.0
 
+# 缓存
+cachetools>=5.3.0,<6.0
+
 # 工具
 python-dotenv>=1.0.0
 beautifulsoup4>=4.12.0

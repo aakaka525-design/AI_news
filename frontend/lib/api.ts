@@ -4,9 +4,11 @@ import type {
   AnomalyStats,
   DragonTigerResponse,
   FreshnessResponse,
+  FullAnalysis,
   HealthResponse,
   HotspotsResponse,
   IndustryListResponse,
+  IntradayData,
   MarketOverviewResponse,
   MoneyFlowResponse,
   NewsListResponse,
@@ -19,6 +21,7 @@ import type {
   SchedulerJobsResponse,
   ScreenPotentialResponse,
   ScreenRpsResponse,
+  SearchResponse,
   SectorResponse,
   SentimentStats,
   StockDailyResponse,
@@ -338,3 +341,16 @@ export const fetchScreenPotential = (date?: string, limit?: number) =>
     ...(date ? { date } : {}),
     ...(limit ? { limit: String(limit) } : {}),
   });
+
+// ===== Full Analysis =====
+
+export const fetchFullAnalysis = (tsCode: string) =>
+  fetchApi<FullAnalysis>(`/api/analysis/full/${tsCode}`);
+
+// ===== Search =====
+export const fetchSearch = (q: string, type: string = "all", limit: number = 20) =>
+  fetchApi<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}&type=${type}&limit=${limit}`);
+
+// ===== Intraday =====
+export const fetchIntraday = (tsCode: string) =>
+  fetchApi<IntradayData>(`/api/intraday/${tsCode}`);

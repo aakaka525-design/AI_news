@@ -190,6 +190,119 @@ def generate_potential_snapshot(top_n: int = 100) -> int:
         conn.close()
 
 
+def generate_full_analysis_snapshot(stock_codes: list[str]) -> int:
+    """
+    生成个股完整分析快照。
+
+    对给定股票列表调用 run_analysis()，将结果写入
+    analysis_full_snapshot 表。
+
+    Args:
+        stock_codes: 股票代码列表 (如 ["301033", "600519"])
+
+    Returns:
+        写入条数
+    """
+    from src.strategies.full_analysis import run_analysis
+
+    if not stock_codes:
+        return 0
+
+    conn = get_connection()
+    try:
+        now = datetime.now()
+        snapshot_dt = now.date()
+        source_date = _get_latest_trade_date(conn)
+        source_dt = _date_str_to_date(source_date) if source_date else snapshot_dt
+
+        count = 0
+        for code in stock_codes:
+            try:
+                result = run_analysis(code)
+                if "error" in result:
+                    logger.warning("分析 %s 失败: %s", code, result["error"])
+                    continue
+
+                # 获取股票名称
+                name_row = conn.execute(
+                    "SELECT name FROM stocks WHERE code = ?", (code,)
+                ).fetchone()
+                stock_name = name_row[0] if name_row else ""
+
+                # 幂等: 替换当日已有记录
+                conn.execute(
+                    "DELETE FROM analysis_full_snapshot "
+                    "WHERE snapshot_date = ? AND ts_code = ?",
+                    (snapshot_dt.isoformat(), code),
+                )
+                conn.execute("""
+                    INSERT INTO analysis_full_snapshot
+                    (snapshot_date, source_trade_date, generated_at, generator_version,
+                     ts_code, stock_name, analysis_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    snapshot_dt.isoformat(), source_dt.isoformat(), now.isoformat(),
+                    GENERATOR_VERSION, code, stock_name,
+                    json.dumps(result, ensure_ascii=False),
+                    now.isoformat(), now.isoformat(),
+                ))
+                count += 1
+                logger.info("完整分析快照: %s (%s)", code, stock_name)
+            except Exception as e:
+                logger.error("完整分析快照 %s 失败: %s", code, e)
+
+        conn.commit()
+        logger.info("完整分析快照: 生成 %d/%d 条记录", count, len(stock_codes))
+        return count
+
+    except Exception as e:
+        logger.error("完整分析快照批量失败: %s", e)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_analysis_snapshot(ts_code: str, target_date: Optional[str] = None) -> Optional[dict]:
+    """
+    获取单只股票的完整分析快照。若不存在则懒生成。
+
+    Args:
+        ts_code: 股票代码
+        target_date: 目标日期 (YYYY-MM-DD)，默认今天
+
+    Returns:
+        分析结果 dict 或 None
+    """
+    conn = get_connection()
+    try:
+        dt = target_date or datetime.now().date().isoformat()
+        row = conn.execute(
+            "SELECT analysis_json FROM analysis_full_snapshot "
+            "WHERE snapshot_date = ? AND ts_code = ?",
+            (dt, ts_code),
+        ).fetchone()
+
+        if row:
+            return json.loads(row[0])
+
+        # 懒生成
+        logger.info("懒生成完整分析: %s", ts_code)
+        count = generate_full_analysis_snapshot([ts_code])
+        if count > 0:
+            row = conn.execute(
+                "SELECT analysis_json FROM analysis_full_snapshot "
+                "WHERE snapshot_date = ? AND ts_code = ?",
+                (datetime.now().date().isoformat(), ts_code),
+            ).fetchone()
+            if row:
+                return json.loads(row[0])
+
+        return None
+    finally:
+        conn.close()
+
+
 def cleanup_old_snapshots(max_rps_days: int = 90, max_analysis_days: int = 14):
     """
     清理超过保留期的快照。

@@ -35,6 +35,8 @@ import {
   fetchPolymarketHistory,
   fetchScreenRps,
   fetchScreenPotential,
+  fetchFullAnalysis,
+  fetchIntraday,
 } from "./api";
 
 export const useHealth = () =>
@@ -231,4 +233,24 @@ export const useScreenPotential = (date?: string, limit?: number) =>
   useQuery({
     queryKey: ["screen-potential", date, limit],
     queryFn: () => fetchScreenPotential(date, limit),
+  });
+
+// ===== Full Analysis =====
+
+export const useFullAnalysis = (tsCode: string) =>
+  useQuery({
+    queryKey: ["full-analysis", tsCode],
+    queryFn: () => fetchFullAnalysis(tsCode),
+    enabled: !!tsCode,
+    staleTime: 5 * 60 * 1000,
+  });
+
+// ===== Intraday =====
+
+export const useIntraday = (tsCode: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["intraday", tsCode],
+    queryFn: () => fetchIntraday(tsCode),
+    enabled: enabled && !!tsCode,
+    refetchInterval: 60_000, // 盘中每分钟刷新
   });

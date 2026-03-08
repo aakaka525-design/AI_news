@@ -728,6 +728,34 @@ class AnalysisFullSnapshot(Base, TimestampMixin):
 
 
 # ============================================================
+# 盘中快照
+# ============================================================
+
+class IntradaySnapshot(Base):
+    """
+    盘中准实时快照
+
+    生成频率: 交易日 9:30-15:00 每 10 分钟
+    股票池: RPS Top 30 ∪ Potential Top 20 去重 ≤50
+    """
+    __tablename__ = 'intraday_snapshot'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ts_code = Column(String(12), nullable=False)
+    price = Column(Numeric(10, 2))
+    change_pct = Column(Numeric(8, 4))
+    volume = Column(Numeric(16, 2))
+    amount = Column(Numeric(16, 2))
+    update_time = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('ts_code', 'update_time', name='uq_intraday_snapshot'),
+        Index('ix_intraday_ts_time', 'ts_code', 'update_time'),
+        {'comment': '盘中准实时快照表'}
+    )
+
+
+# ============================================================
 # Upsert Helper (幂等性保证)
 # ============================================================
 

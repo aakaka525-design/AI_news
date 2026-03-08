@@ -351,6 +351,66 @@ export interface PolymarketHistoryResponse {
   data: PolymarketSnapshot[];
 }
 
+// ===== Full Analysis =====
+export interface FullAnalysisKline {
+  start: string;
+  end: string;
+  days: number;
+  latest_close: number;
+}
+
+export interface FullAnalysisPattern {
+  price: number;
+  ma5: number;
+  ma10: number;
+  ma20: number;
+  ma_arrangement: string;
+  above_ma20: boolean;
+  recent_high: number;
+  recent_low: number;
+  vol_ratio: number;
+}
+
+export interface FullAnalysisSupportResistance {
+  R3: number;
+  R2: number;
+  R1: number;
+  S1: number;
+  S2: number;
+  S3: number;
+}
+
+export interface FullAnalysisAnnouncement {
+  date: string;
+  title: string;
+}
+
+export interface FullAnalysisSectorRank {
+  sector: string;
+  type: string;
+  rank: number;
+  total: number;
+  rps_20: number;
+}
+
+export interface FullAnalysisMarket {
+  index: string;
+  close: number;
+  change_pct: number;
+  above_ma5: boolean;
+}
+
+export interface FullAnalysis {
+  stock_code: string;
+  generated_at: string;
+  kline: FullAnalysisKline;
+  pattern: FullAnalysisPattern;
+  support_resistance: FullAnalysisSupportResistance;
+  announcements: FullAnalysisAnnouncement[];
+  sector_rank: FullAnalysisSectorRank[];
+  market: FullAnalysisMarket;
+}
+
 // ===== Screener =====
 export interface ScreenRpsItem {
   ts_code: string;
@@ -388,4 +448,33 @@ export interface ScreenPotentialResponse {
   generated_at: string;
   total: number;
   items: ScreenPotentialItem[];
+}
+
+// ===== Intraday =====
+export interface IntradayData {
+  ts_code: string;
+  price: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  amount: number | null;
+  update_time: string | null;
+}
+
+// ===== Search =====
+export interface SearchStockResult {
+  ts_code: string;
+  name: string;
+  industry: string | null;
+  market: string | null;
+}
+
+export interface SearchNewsResult {
+  id: number;
+  title: string;
+  received_at: string;
+}
+
+export interface SearchResponse {
+  stocks: SearchStockResult[];
+  news: SearchNewsResult[];
 }

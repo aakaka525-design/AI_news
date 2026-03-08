@@ -10,7 +10,7 @@ Usage:
         ...
 """
 
-from sqlalchemy import create_engine as _create_engine
+from sqlalchemy import create_engine as _create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 
@@ -31,7 +31,19 @@ def create_engine_from_url(database_url: str, **kwargs):
             "pool_recycle": 3600,
         }
     defaults.update(kwargs)
-    return _create_engine(database_url, **defaults)
+    engine = _create_engine(database_url, **defaults)
+
+    if database_url.startswith("sqlite"):
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            import sqlite3
+            if isinstance(dbapi_connection, sqlite3.Connection):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.close()
+
+    return engine
 
 
 def get_session_factory(engine):

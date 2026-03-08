@@ -1,9 +1,11 @@
 """Unified exception handling middleware for FastAPI."""
 
 import re
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.exceptions import AnalysisError, AppError, DatabaseError, DataFetchError
 from src.logging import get_logger
@@ -21,6 +23,27 @@ _SENSITIVE_PATTERN = re.compile(
 def _sanitize_error(msg: str) -> str:
     """过滤异常消息中的敏感信息"""
     return _SENSITIVE_PATTERN.sub(r"\1=***", msg)
+
+
+class PerfMiddleware(BaseHTTPMiddleware):
+    """Log request duration and add X-Response-Time header."""
+
+    SLOW_THRESHOLD = 0.5  # seconds
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        elapsed = time.perf_counter() - start
+
+        response.headers["X-Response-Time"] = f"{elapsed:.3f}s"
+
+        log_kw = dict(method=request.method, path=request.url.path, elapsed=f"{elapsed:.3f}s")
+        if elapsed > self.SLOW_THRESHOLD:
+            logger.warning("slow_request", **log_kw)
+        else:
+            logger.info("request", **log_kw)
+
+        return response
 
 
 class CatchAllMiddleware:
@@ -47,6 +70,9 @@ class CatchAllMiddleware:
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register exception handlers on the FastAPI app."""
+
+    # Performance logging (innermost = runs first).
+    app.add_middleware(PerfMiddleware)
 
     # Catch-all middleware for unhandled exceptions.
     app.add_middleware(CatchAllMiddleware)
