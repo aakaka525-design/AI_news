@@ -33,6 +33,7 @@
 | 执行报告 | 实现完成后的交付报告 | `claude-phase2-execution-report.md` |
 | 复核验收 | Codex 对实现的复核结论 | `codex-review-phase2-*.md`, `codex-close-phase2-review.md` |
 | 文档优化 | 文档结构优化讨论 | `claude-docs-optimization-proposal.md`, `codex-reply-to-docs-*` |
+| 治理自动化 | 文档规则自动校验与执行机制讨论 | `docs-automation-proposal.md` |
 
 ## 推荐阅读顺序
 
@@ -106,3 +107,4 @@
 | 文件 | 作者 | 角色 | 状态 |
 |------|------|------|------|
 | `claude-handoff-format-proposal.md` | Claude + Codex | 格式改革讨论（单文件追加制试点） | 已关闭 |
+| `docs-automation-proposal.md` | Codex | 文档治理自动化提案 | 活跃 |
