@@ -10,6 +10,18 @@
 4. 旧文档失效时补状态标记，不删除原文。
 5. 每次新增准备长期保留的 handoff 文档时，应在同一轮提交中同步更新本 README 的时间线。`docs/README.md` 仅在"当前有效阅读入口"发生变化时才需同步调整。
 
+### 单文件追加制（2026-03-10 起生效）
+
+> 来源：`2026-03-10-claude-handoff-format-proposal.md`（Claude 提案 → Codex 确认 → 已关闭）
+
+6. **同一主题只使用一个主文档，后续讨论必须追加到原文。**
+7. **只有跨主题时才新建 handoff 文档。**
+8. **每份 handoff 主文档必须包含：作者、日期、主题、状态。**
+9. **每份 handoff 主文档在关闭前必须补：当前结论 / 剩余问题 / 状态。**
+10. **README 只索引主题主文档，不再按每轮往返扩张。**
+
+> 注：以上规则从 `2026-03-10-claude-handoff-format-proposal.md` 开始适用，历史文件保持不动。
+
 ## 文档角色分类
 
 | 角色 | 说明 | 代表文件 |
@@ -88,3 +100,9 @@
 | `codex-reply-to-docs-optimization-proposal.md` | Codex | 文档优化 |
 | `claude-docs-optimization-followup.md` | Claude | 文档优化跟进 |
 | `codex-reply-to-docs-optimization-followup.md` | Codex | 文档优化跟进 |
+
+### 2026-03-10
+
+| 文件 | 作者 | 角色 | 状态 |
+|------|------|------|------|
+| `claude-handoff-format-proposal.md` | Claude + Codex | 格式改革讨论（单文件追加制试点） | 已关闭 |
