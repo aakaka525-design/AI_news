@@ -450,6 +450,61 @@ export interface ScreenPotentialResponse {
   items: ScreenPotentialItem[];
 }
 
+// ===== Composite Score =====
+export interface ScoreBucket {
+  score: number;
+  weight_nominal: number;
+  weight_effective: number;
+  coverage_ratio: number;
+}
+
+export interface ScoreFactor {
+  factor_key: string;
+  bucket: string;
+  available: boolean;
+  raw_value: number | null;
+  normalized_value: number | null;
+  weight_nominal: number;
+  weight_effective: number;
+  staleness_trading_days: number;
+  source_key: string;
+  source_table: string;
+  data_date: string | null;
+}
+
+export interface StockScoreResponse {
+  ts_code: string;
+  trade_date: string;
+  score: number | null;
+  score_version: string;
+  status: string;
+  exclusion_reason: string | null;
+  experimental: boolean;
+  coverage_ratio: number | null;
+  low_confidence: boolean;
+  buckets: Record<string, ScoreBucket>;
+  factors: ScoreFactor[];
+}
+
+export interface ScoreRankingItem {
+  ts_code: string;
+  name: string | null;
+  industry: string | null;
+  score: number;
+  price_trend_score: number | null;
+  flow_score: number | null;
+  fundamentals_score: number | null;
+  coverage_ratio: number;
+  low_confidence: boolean;
+}
+
+export interface ScoreRankingResponse {
+  trade_date: string;
+  score_version: string;
+  total: number;
+  items: ScoreRankingItem[];
+}
+
 // ===== Intraday =====
 export interface IntradayData {
   ts_code: string;

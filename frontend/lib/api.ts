@@ -29,6 +29,8 @@ import type {
   StockProfileResponse,
   TradingDayResponse,
   ValuationHistoryResponse,
+  StockScoreResponse,
+  ScoreRankingResponse,
   } from "./types";
 
 type QueryParams = Record<string, string | undefined>;
@@ -340,6 +342,26 @@ export const fetchScreenPotential = (date?: string, limit?: number) =>
   fetchApi<ScreenPotentialResponse>("/api/screens/potential", {
     ...(date ? { date } : {}),
     ...(limit ? { limit: String(limit) } : {}),
+  });
+
+// ===== Composite Score =====
+
+export const fetchStockScore = (tsCode: string) =>
+  fetchApi<StockScoreResponse>(`/api/stocks/${tsCode}/score`);
+
+export const fetchScoresRanking = (
+  limit = 50,
+  offset = 0,
+  sortBy = "score",
+  industry?: string,
+  includeLowConfidence = false,
+) =>
+  fetchApi<ScoreRankingResponse>("/api/scores/ranking", {
+    limit: String(limit),
+    offset: String(offset),
+    sort_by: sortBy,
+    ...(industry ? { industry } : {}),
+    include_low_confidence: String(includeLowConfidence),
   });
 
 // ===== Full Analysis =====

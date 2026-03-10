@@ -10,6 +10,7 @@ import {
   Target,
   AlertTriangle,
   Settings,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ export const navGroups: NavGroup[] = [
       { href: "/dragon", label: "龙虎榜", icon: Trophy },
       { href: "/sector", label: "板块行情", icon: Grid3X3 },
       { href: "/screens", label: "筛选", icon: Filter },
+      { href: "/scores", label: "综合评分", icon: Gauge },
       { href: "/watchlist", label: "自选", icon: Star },
     ],
   },

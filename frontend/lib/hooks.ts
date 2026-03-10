@@ -37,6 +37,8 @@ import {
   fetchScreenPotential,
   fetchFullAnalysis,
   fetchIntraday,
+  fetchStockScore,
+  fetchScoresRanking,
 } from "./api";
 
 export const useHealth = () =>
@@ -233,6 +235,29 @@ export const useScreenPotential = (date?: string, limit?: number) =>
   useQuery({
     queryKey: ["screen-potential", date, limit],
     queryFn: () => fetchScreenPotential(date, limit),
+  });
+
+// ===== Composite Score =====
+
+export const useStockScore = (tsCode: string) =>
+  useQuery({
+    queryKey: ["stock-score", tsCode],
+    queryFn: () => fetchStockScore(tsCode),
+    enabled: !!tsCode,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useScoresRanking = (
+  limit = 50,
+  offset = 0,
+  sortBy = "score",
+  industry?: string,
+  includeLowConfidence = false,
+) =>
+  useQuery({
+    queryKey: ["scores-ranking", limit, offset, sortBy, industry, includeLowConfidence],
+    queryFn: () => fetchScoresRanking(limit, offset, sortBy, industry, includeLowConfidence),
+    staleTime: 5 * 60 * 1000,
   });
 
 // ===== Full Analysis =====

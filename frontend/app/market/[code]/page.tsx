@@ -17,6 +17,7 @@ import {
   useReports,
   useFullAnalysis,
   useIntraday,
+  useStockScore,
 } from "@/lib/hooks";
 import { useTradingSession } from "@/lib/use-trading-session";
 import { WatchlistButton } from "@/components/watchlist-button";
@@ -26,6 +27,7 @@ import type {
   ResearchReport,
   FullAnalysis,
 } from "@/lib/types";
+import { ScoreSummaryCard } from "@/components/scores/score-summary-card";
 
 const RANGE_LIMITS: Record<TimeRange, number> = {
   "1M": 22,
@@ -375,6 +377,7 @@ export default function StockDetailPage({
   const stockCode = tsCode.split(".")[0];
   const { data: reportsData } = useReports(stockCode, 20);
   const { data: analysisData, isLoading: analysisLoading, isError: analysisError } = useFullAnalysis(tsCode);
+  const { data: scoreData } = useStockScore(tsCode);
 
   // 盘中实时数据
   const { isTrading, statusText } = useTradingSession();
@@ -508,6 +511,9 @@ export default function StockDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* Composite Score */}
+      {scoreData && <ScoreSummaryCard data={scoreData} />}
 
       {/* AI Full Analysis */}
       {analysisLoading ? (
