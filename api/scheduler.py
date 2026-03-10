@@ -34,31 +34,58 @@ TASK_CONFIGS = {
         "enabled": True,
         "description": "从 RSS 源和 RSSHub 抓取新闻"
     },
-    "stock_indicators": {
-        "name": "技术指标更新",
+    "akshare_stock_basic": {
+        "name": "股票列表更新",
+        "trigger": "cron",
+        "hour": 8,
+        "minute": 0,
+        "enabled": True,
+        "description": "AkShare 全 A 股列表 + 行业映射"
+    },
+    "akshare_daily": {
+        "name": "日线行情更新",
         "trigger": "cron",
         "hour": 16,
         "minute": 30,
         "day_of_week": "mon-fri",
         "enabled": True,
-        "description": "收盘后更新技术指标、RPS 等"
+        "description": "AkShare 全市场日线数据"
     },
-    "fund_flow": {
+    "akshare_daily_basic": {
+        "name": "估值指标更新",
+        "trigger": "cron",
+        "hour": 16,
+        "minute": 35,
+        "day_of_week": "mon-fri",
+        "enabled": True,
+        "description": "AkShare 全市场估值/换手率/市值数据"
+    },
+    "akshare_moneyflow": {
         "name": "资金流向更新",
         "trigger": "cron",
         "hour": 17,
         "minute": 0,
         "day_of_week": "mon-fri",
         "enabled": True,
-        "description": "更新沪深股通、龙虎榜数据"
+        "description": "AkShare 个股资金流向数据"
     },
-    "macro_data": {
-        "name": "宏观数据更新",
+    "akshare_hk_hold": {
+        "name": "北向持股更新",
         "trigger": "cron",
         "hour": 8,
-        "minute": 0,
+        "minute": 30,
+        "day_of_week": "mon-fri",
         "enabled": True,
-        "description": "更新 M1/M2、CPI、GDP 等宏观指标"
+        "description": "AkShare 沪深港通持股数据"
+    },
+    "akshare_fina_indicator": {
+        "name": "财务指标更新",
+        "trigger": "cron",
+        "hour": 18,
+        "minute": 0,
+        "day_of_week": "mon-fri",
+        "enabled": True,
+        "description": "AkShare 财务指标数据"
     },
     "ai_analysis": {
         "name": "AI 热点分析",
@@ -107,19 +134,12 @@ TASK_CONFIGS = {
 TASK_EXPECTED_DATASETS: dict[str, list[tuple[str, str, str]]] = {
     "rss_fetch": [("rss", "rss_items", "news")],
     "ai_analysis": [("ai", "analysis", "news"), ("ai", "rss_sentiment", "news")],
-    "stock_indicators": [
-        ("tushare", "ts_daily", "stocks"),
-        ("tushare", "ts_weekly", "stocks"),
-        ("tushare", "ts_weekly_valuation", "stocks"),
-    ],
-    "fund_flow": [("tushare", "ts_moneyflow", "stocks"), ("tushare", "ts_hsgt_top10", "stocks")],
-    "macro_data": [
-        ("tushare", "ts_daily_basic", "stocks"),
-        ("tushare", "ts_hk_hold", "stocks"),
-        ("tushare", "ts_top10_holders", "stocks"),
-        ("tushare", "ts_cyq_perf", "stocks"),
-        ("tushare", "ts_cashflow", "stocks"),
-    ],
+    "akshare_stock_basic": [("akshare", "ts_stock_basic", "stocks")],
+    "akshare_daily": [("akshare", "ts_daily", "stocks")],
+    "akshare_daily_basic": [("akshare", "ts_daily_basic", "stocks")],
+    "akshare_moneyflow": [("akshare", "ts_moneyflow", "stocks")],
+    "akshare_hk_hold": [("akshare", "ts_hk_hold", "stocks")],
+    "akshare_fina_indicator": [("akshare", "ts_fina_indicator", "stocks")],
     "screen_snapshot": [
         ("derived", "screen_rps", "stocks"),
         ("derived", "screen_potential", "stocks"),
@@ -488,52 +508,39 @@ def register_default_tasks():
     scheduler_manager.register_task("ai_analysis", ai_task)
 
     # ------------------------------------------------------------------
-    # 技术指标（直接 import，替代 subprocess）
+    # AkShare 数据 producers (P0 迁移 — 替代已失效的 Tushare 任务)
     # ------------------------------------------------------------------
-    from scripts.fetch_history import run_stock_indicators
+    from src.data_ingestion.akshare.producers.stock_basic import run_stock_basic
+    from src.data_ingestion.akshare.producers.daily import run_daily
+    from src.data_ingestion.akshare.producers.daily_basic import run_daily_basic
+    from src.data_ingestion.akshare.producers.moneyflow import run_moneyflow
+    from src.data_ingestion.akshare.producers.hk_hold import run_hk_hold
+    from src.data_ingestion.akshare.producers.fina_indicator import run_fina_indicator
 
-    def indicators_task():
-        results = run_stock_indicators()
-        return [
-            DatasetTelemetry(
-                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
-            )
-            for r in results
-        ]
+    def akshare_stock_basic_task():
+        return run_stock_basic()
 
-    scheduler_manager.register_task("stock_indicators", indicators_task)
+    def akshare_daily_task():
+        return run_daily()
 
-    # ------------------------------------------------------------------
-    # 资金流向（直接 import，替代 subprocess）
-    # ------------------------------------------------------------------
-    from src.data_ingestion.tushare.moneyflow import run_fund_flow
+    def akshare_daily_basic_task():
+        return run_daily_basic()
 
-    def fund_flow_task():
-        results = run_fund_flow()
-        return [
-            DatasetTelemetry(
-                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
-            )
-            for r in results
-        ]
+    def akshare_moneyflow_task():
+        return run_moneyflow()
 
-    scheduler_manager.register_task("fund_flow", fund_flow_task)
+    def akshare_hk_hold_task():
+        return run_hk_hold()
 
-    # ------------------------------------------------------------------
-    # 宏观数据（直接 import，替代 subprocess）
-    # ------------------------------------------------------------------
-    from scripts.fetch_advanced_data import run_macro_data
+    def akshare_fina_indicator_task():
+        return run_fina_indicator()
 
-    def macro_task():
-        results = run_macro_data()
-        return [
-            DatasetTelemetry(
-                source_key="tushare", dataset_key=r["dataset"], db_name="stocks", record_count=r["count"],
-            )
-            for r in results
-        ]
-
-    scheduler_manager.register_task("macro_data", macro_task)
+    scheduler_manager.register_task("akshare_stock_basic", akshare_stock_basic_task)
+    scheduler_manager.register_task("akshare_daily", akshare_daily_task)
+    scheduler_manager.register_task("akshare_daily_basic", akshare_daily_basic_task)
+    scheduler_manager.register_task("akshare_moneyflow", akshare_moneyflow_task)
+    scheduler_manager.register_task("akshare_hk_hold", akshare_hk_hold_task)
+    scheduler_manager.register_task("akshare_fina_indicator", akshare_fina_indicator_task)
 
     # ------------------------------------------------------------------
     # Polymarket 预测市场
