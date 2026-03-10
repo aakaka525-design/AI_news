@@ -72,14 +72,32 @@ def _write_fina_indicator(conn, ts_code: str, df: pd.DataFrame) -> int:
                 if ak_col in row.index:
                     values[db_col] = safe_float(row[ak_col])
 
+            # 使用 ON CONFLICT DO UPDATE 仅更新有值的字段，
+            # 保留已有的 netprofit_yoy 等 AkShare 无法提供的字段。
             conn.execute("""
-                INSERT OR REPLACE INTO ts_fina_indicator
+                INSERT INTO ts_fina_indicator
                 (ts_code, end_date, eps, bps, roe, roe_waa, roa,
                  grossprofit_margin, netprofit_margin,
                  debt_to_assets, current_ratio, quick_ratio,
                  ar_turn, inv_turn, fa_turn, assets_turn,
                  updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ts_code, end_date) DO UPDATE SET
+                    eps = COALESCE(excluded.eps, eps),
+                    bps = COALESCE(excluded.bps, bps),
+                    roe = COALESCE(excluded.roe, roe),
+                    roe_waa = COALESCE(excluded.roe_waa, roe_waa),
+                    roa = COALESCE(excluded.roa, roa),
+                    grossprofit_margin = COALESCE(excluded.grossprofit_margin, grossprofit_margin),
+                    netprofit_margin = COALESCE(excluded.netprofit_margin, netprofit_margin),
+                    debt_to_assets = COALESCE(excluded.debt_to_assets, debt_to_assets),
+                    current_ratio = COALESCE(excluded.current_ratio, current_ratio),
+                    quick_ratio = COALESCE(excluded.quick_ratio, quick_ratio),
+                    ar_turn = COALESCE(excluded.ar_turn, ar_turn),
+                    inv_turn = COALESCE(excluded.inv_turn, inv_turn),
+                    fa_turn = COALESCE(excluded.fa_turn, fa_turn),
+                    assets_turn = COALESCE(excluded.assets_turn, assets_turn),
+                    updated_at = excluded.updated_at
             """, (
                 values.get("ts_code"), values.get("end_date"),
                 values.get("eps"), values.get("bps"),

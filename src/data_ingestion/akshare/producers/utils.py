@@ -43,10 +43,15 @@ def safe_str(val) -> str | None:
 
 
 def ts_code_from_symbol(symbol: str) -> str:
-    """将 6 位代码转换为 ts_code 格式（000001 → 000001.SZ）"""
+    """将 6 位代码转换为 ts_code 格式（000001 → 000001.SZ）
+
+    与 src/data_ingestion/compat.py:to_ts_code() 保持一致。
+    """
     s = str(symbol).strip()
     if "." in s:
         return s
-    if s.startswith(("6", "9")):
+    if s.startswith(("6", "5")):
         return f"{s}.SH"
+    if s.startswith(("4", "8")):
+        return f"{s}.BJ"
     return f"{s}.SZ"

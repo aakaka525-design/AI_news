@@ -45,10 +45,34 @@ def _fetch_moneyflow_one(symbol: str, trade_date: str) -> pd.DataFrame | None:
         return None
 
 
+def _split_net_to_buy_sell(net_amount) -> tuple[float | None, float | None]:
+    """将净流入净额拆分为 buy/sell amount。
+
+    AkShare 只提供各档净流入净额，scoring 需要 buy/sell 分开。
+    正值 → buy=net, sell=0；负值 → buy=0, sell=|net|。
+    这样 buy - sell == net，保持 compute_main_money_flow_raw 信号正确。
+    """
+    v = safe_float(net_amount)
+    if v is None:
+        return None, None
+    if v >= 0:
+        return v, 0.0
+    return 0.0, abs(v)
+
+
 def _write_moneyflow(conn, ts_code: str, trade_date: str, row) -> bool:
-    """写入 ts_moneyflow 表"""
+    """写入 ts_moneyflow 表。
+
+    AkShare 列：超大单/大单/中单/小单净流入-净额
+    → 拆为 buy/sell amount 填入对应分档，保证下游 scoring factor 可用。
+    """
     try:
         now = datetime.now().isoformat()
+        buy_elg, sell_elg = _split_net_to_buy_sell(row.get("超大单净流入-净额"))
+        buy_lg, sell_lg = _split_net_to_buy_sell(row.get("大单净流入-净额"))
+        buy_md, sell_md = _split_net_to_buy_sell(row.get("中单净流入-净额"))
+        buy_sm, sell_sm = _split_net_to_buy_sell(row.get("小单净流入-净额"))
+
         conn.execute("""
             INSERT OR REPLACE INTO ts_moneyflow
             (ts_code, trade_date,
@@ -60,12 +84,12 @@ def _write_moneyflow(conn, ts_code: str, trade_date: str, row) -> bool:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             ts_code, trade_date,
-            None, None, None, None,  # buy vol 分档 — AkShare 不提供
-            None, None, None, None,  # sell vol 分档
-            None, None, None, None,  # buy amount 分档
-            None, None, None, None,  # sell amount 分档
+            None, None, None, None,  # buy vol — AkShare 不提供成交量分档
+            None, None, None, None,  # sell vol
+            buy_sm, buy_md, buy_lg, buy_elg,
+            sell_sm, sell_md, sell_lg, sell_elg,
             None,  # net_mf_vol
-            safe_float(row.get("主力净流入-净额")),  # net_mf_amount
+            safe_float(row.get("主力净流入-净额")),
             now,
         ))
         return True

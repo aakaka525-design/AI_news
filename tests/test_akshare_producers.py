@@ -16,6 +16,9 @@ class TestUtils:
         assert ts_code_from_symbol("300750") == "300750.SZ"
         assert ts_code_from_symbol("688001") == "688001.SH"
         assert ts_code_from_symbol("000001.SZ") == "000001.SZ"
+        # 北交所 .BJ 映射（与 compat.py 一致）
+        assert ts_code_from_symbol("430047") == "430047.BJ"
+        assert ts_code_from_symbol("831799") == "831799.BJ"
 
     def test_safe_float(self):
         from src.data_ingestion.akshare.producers.utils import safe_float
@@ -236,6 +239,14 @@ class TestMoneyflowProducer:
         assert _market_for_symbol("000001") == "sz"
         assert _market_for_symbol("300750") == "sz"
 
+    def test_split_net_to_buy_sell(self):
+        from src.data_ingestion.akshare.producers.moneyflow import _split_net_to_buy_sell
+        # 正净流入 → buy=net, sell=0
+        assert _split_net_to_buy_sell(100.0) == (100.0, 0.0)
+        # 负净流入 → buy=0, sell=|net|
+        assert _split_net_to_buy_sell(-50.0) == (0.0, 50.0)
+        assert _split_net_to_buy_sell(None) == (None, None)
+
     def test_write_moneyflow_to_db(self, tmp_path):
         db = tmp_path / "test.db"
         conn = sqlite3.connect(str(db))
@@ -252,12 +263,23 @@ class TestMoneyflowProducer:
             )
         """)
         from src.data_ingestion.akshare.producers.moneyflow import _write_moneyflow
-        row = pd.Series({"主力净流入-净额": 50000000.0})
+        row = pd.Series({
+            "主力净流入-净额": 50000000.0,
+            "超大单净流入-净额": 30000000.0,
+            "大单净流入-净额": 20000000.0,
+            "中单净流入-净额": -10000000.0,
+            "小单净流入-净额": -5000000.0,
+        })
         result = _write_moneyflow(conn, "000001.SZ", "20260309", row)
         assert result is True
         conn.commit()
-        rows = conn.execute("SELECT * FROM ts_moneyflow").fetchall()
-        assert len(rows) == 1
+        r = conn.execute("SELECT buy_elg_amount, sell_elg_amount, buy_lg_amount, sell_lg_amount FROM ts_moneyflow").fetchone()
+        # 超大单正 → buy=30M, sell=0
+        assert r[0] == 30000000.0
+        assert r[1] == 0.0
+        # 大单正 → buy=20M, sell=0
+        assert r[2] == 20000000.0
+        assert r[3] == 0.0
         conn.close()
 
 
@@ -336,7 +358,8 @@ class TestFinaIndicatorProducer:
         assert len(rows) == 1
         conn.close()
 
-    def test_write_fina_indicator_idempotent(self, tmp_path):
+    def test_write_fina_indicator_preserves_existing_fields(self, tmp_path):
+        """ON CONFLICT DO UPDATE 不应覆盖已有的 netprofit_yoy 等字段"""
         db = tmp_path / "test.db"
         conn = sqlite3.connect(str(db))
         conn.execute("""
@@ -353,15 +376,28 @@ class TestFinaIndicatorProducer:
                 UNIQUE(ts_code, end_date)
             )
         """)
+        # 预先插入一条含 netprofit_yoy 的记录（模拟 Tushare 遗留数据）
+        conn.execute("""
+            INSERT INTO ts_fina_indicator (ts_code, end_date, roe, netprofit_yoy)
+            VALUES ('000001.SZ', '20251231', 12.0, 25.5)
+        """)
+        conn.commit()
+
         from src.data_ingestion.akshare.producers.fina_indicator import _write_fina_indicator
         df = pd.DataFrame({
             "日期": ["2025-12-31"],
             "摊薄每股收益": [1.5],
-            "每股净资产": [10.2],
             "净资产收益率": [15.0],
         })
         _write_fina_indicator(conn, "000001.SZ", df)
-        _write_fina_indicator(conn, "000001.SZ", df)
-        rows = conn.execute("SELECT * FROM ts_fina_indicator").fetchall()
-        assert len(rows) == 1
+
+        row = conn.execute(
+            "SELECT roe, netprofit_yoy, eps FROM ts_fina_indicator WHERE ts_code='000001.SZ'"
+        ).fetchone()
+        # roe 应被更新为 AkShare 值
+        assert row[0] == 15.0
+        # netprofit_yoy 应保留原值，不被覆盖为 NULL
+        assert row[1] == 25.5
+        # eps 应写入新值
+        assert row[2] == 1.5
         conn.close()
