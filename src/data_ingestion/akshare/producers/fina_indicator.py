@@ -20,6 +20,8 @@ from src.telemetry.models import DatasetTelemetry
 logger = logging.getLogger(__name__)
 
 # AkShare 列名 → ts_fina_indicator 字段映射
+# 注: AkShare 返回的列名可能带 (%) / (元) / (次) 后缀，
+#     _resolve_field() 会做 prefix 匹配兼容两种情况。
 FIELD_MAP = {
     "摊薄每股收益": "eps",
     "每股净资产": "bps",
@@ -35,7 +37,26 @@ FIELD_MAP = {
     "存货周转率": "inv_turn",
     "固定资产周转率": "fa_turn",
     "总资产周转率": "assets_turn",
+    # 增长率 — Codex R11 要求至少补 netprofit_yoy
+    "净利润增长率": "netprofit_yoy",
+    "主营业务收入增长率": "or_yoy",
 }
+
+
+def _resolve_field(row, prefix: str):
+    """用前缀匹配查找 AkShare 列值。
+
+    AkShare 列名可能带单位后缀，如 '净利润增长率(%)' 或 '摊薄每股收益(元)'。
+    FIELD_MAP 只存基础名称，这里做 startswith 匹配。
+    """
+    # 精确匹配优先
+    if prefix in row.index:
+        return row[prefix]
+    # 前缀匹配
+    for col in row.index:
+        if col.startswith(prefix):
+            return row[col]
+    return None
 
 
 def _fetch_fina_one(symbol: str) -> pd.DataFrame | None:
@@ -69,19 +90,21 @@ def _write_fina_indicator(conn, ts_code: str, df: pd.DataFrame) -> int:
 
             values = {"ts_code": ts_code, "end_date": end_date}
             for ak_col, db_col in FIELD_MAP.items():
-                if ak_col in row.index:
-                    values[db_col] = safe_float(row[ak_col])
+                resolved = _resolve_field(row, ak_col)
+                if resolved is not None:
+                    values[db_col] = safe_float(resolved)
 
-            # 使用 ON CONFLICT DO UPDATE 仅更新有值的字段，
-            # 保留已有的 netprofit_yoy 等 AkShare 无法提供的字段。
+            # 使用 ON CONFLICT DO UPDATE + COALESCE 仅更新有值的字段，
+            # 保留已有的、AkShare 无法提供的字段。
             conn.execute("""
                 INSERT INTO ts_fina_indicator
                 (ts_code, end_date, eps, bps, roe, roe_waa, roa,
                  grossprofit_margin, netprofit_margin,
                  debt_to_assets, current_ratio, quick_ratio,
                  ar_turn, inv_turn, fa_turn, assets_turn,
+                 netprofit_yoy, or_yoy,
                  updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ts_code, end_date) DO UPDATE SET
                     eps = COALESCE(excluded.eps, eps),
                     bps = COALESCE(excluded.bps, bps),
@@ -97,6 +120,8 @@ def _write_fina_indicator(conn, ts_code: str, df: pd.DataFrame) -> int:
                     inv_turn = COALESCE(excluded.inv_turn, inv_turn),
                     fa_turn = COALESCE(excluded.fa_turn, fa_turn),
                     assets_turn = COALESCE(excluded.assets_turn, assets_turn),
+                    netprofit_yoy = COALESCE(excluded.netprofit_yoy, netprofit_yoy),
+                    or_yoy = COALESCE(excluded.or_yoy, or_yoy),
                     updated_at = excluded.updated_at
             """, (
                 values.get("ts_code"), values.get("end_date"),
@@ -107,6 +132,7 @@ def _write_fina_indicator(conn, ts_code: str, df: pd.DataFrame) -> int:
                 values.get("quick_ratio"),
                 values.get("ar_turn"), values.get("inv_turn"),
                 values.get("fa_turn"), values.get("assets_turn"),
+                values.get("netprofit_yoy"), values.get("or_yoy"),
                 now,
             ))
             count += 1

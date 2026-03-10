@@ -327,6 +327,55 @@ class TestHkHoldProducer:
 class TestFinaIndicatorProducer:
     """fina_indicator producer 测试"""
 
+    def test_resolve_field_exact_match(self):
+        from src.data_ingestion.akshare.producers.fina_indicator import _resolve_field
+        row = pd.Series({"净利润增长率": 12.5, "总资产周转率": 0.8})
+        assert _resolve_field(row, "净利润增长率") == 12.5
+
+    def test_resolve_field_prefix_match(self):
+        """AkShare 列名带 (%) 后缀时做 prefix 匹配"""
+        from src.data_ingestion.akshare.producers.fina_indicator import _resolve_field
+        row = pd.Series({"净利润增长率(%)": 12.5, "总资产周转率(次)": 0.8})
+        assert _resolve_field(row, "净利润增长率") == 12.5
+        assert _resolve_field(row, "总资产周转率") == 0.8
+        assert _resolve_field(row, "不存在的字段") is None
+
+    def test_write_fina_indicator_with_netprofit_yoy(self, tmp_path):
+        """netprofit_yoy 映射（Codex R11 要求）"""
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_fina_indicator (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT NOT NULL, ann_date TEXT, end_date TEXT NOT NULL,
+                eps REAL, dt_eps REAL, bps REAL, ocfps REAL, grps REAL,
+                roe REAL, roe_waa REAL, roe_dt REAL, roa REAL, npta REAL, roic REAL,
+                grossprofit_margin REAL, netprofit_margin REAL, op_of_gr REAL,
+                or_yoy REAL, op_yoy REAL, tp_yoy REAL, netprofit_yoy REAL, dt_netprofit_yoy REAL,
+                debt_to_assets REAL, current_ratio REAL, quick_ratio REAL,
+                ar_turn REAL, inv_turn REAL, fa_turn REAL, assets_turn REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_code, end_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.fina_indicator import _write_fina_indicator
+        # 模拟 AkShare 返回带 (%) 后缀的列名
+        df = pd.DataFrame({
+            "日期": ["2025-12-31"],
+            "摊薄每股收益": [1.5],
+            "净资产收益率": [15.0],
+            "净利润增长率(%)": [25.3],
+            "主营业务收入增长率(%)": [18.7],
+        })
+        count = _write_fina_indicator(conn, "000001.SZ", df)
+        assert count == 1
+        row = conn.execute(
+            "SELECT netprofit_yoy, or_yoy FROM ts_fina_indicator WHERE ts_code='000001.SZ'"
+        ).fetchone()
+        assert row[0] == 25.3
+        assert row[1] == 18.7
+        conn.close()
+
     def test_write_fina_indicator_to_db(self, tmp_path):
         db = tmp_path / "test.db"
         conn = sqlite3.connect(str(db))
