@@ -300,3 +300,68 @@ class TestHkHoldProducer:
         rows = conn.execute("SELECT * FROM ts_hk_hold").fetchall()
         assert len(rows) == 2
         conn.close()
+
+
+class TestFinaIndicatorProducer:
+    """fina_indicator producer 测试"""
+
+    def test_write_fina_indicator_to_db(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_fina_indicator (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT NOT NULL, ann_date TEXT, end_date TEXT NOT NULL,
+                eps REAL, dt_eps REAL, bps REAL, ocfps REAL, grps REAL,
+                roe REAL, roe_waa REAL, roe_dt REAL, roa REAL, npta REAL, roic REAL,
+                grossprofit_margin REAL, netprofit_margin REAL, op_of_gr REAL,
+                or_yoy REAL, op_yoy REAL, tp_yoy REAL, netprofit_yoy REAL, dt_netprofit_yoy REAL,
+                debt_to_assets REAL, current_ratio REAL, quick_ratio REAL,
+                ar_turn REAL, inv_turn REAL, fa_turn REAL, assets_turn REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_code, end_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.fina_indicator import _write_fina_indicator
+        df = pd.DataFrame({
+            "日期": ["2025-12-31"],
+            "摊薄每股收益": [1.5],
+            "每股净资产": [10.2],
+            "净资产收益率": [15.0],
+            "销售毛利率": [30.0],
+        })
+        count = _write_fina_indicator(conn, "000001.SZ", df)
+        assert count == 1
+        rows = conn.execute("SELECT * FROM ts_fina_indicator").fetchall()
+        assert len(rows) == 1
+        conn.close()
+
+    def test_write_fina_indicator_idempotent(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_fina_indicator (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT NOT NULL, ann_date TEXT, end_date TEXT NOT NULL,
+                eps REAL, dt_eps REAL, bps REAL, ocfps REAL, grps REAL,
+                roe REAL, roe_waa REAL, roe_dt REAL, roa REAL, npta REAL, roic REAL,
+                grossprofit_margin REAL, netprofit_margin REAL, op_of_gr REAL,
+                or_yoy REAL, op_yoy REAL, tp_yoy REAL, netprofit_yoy REAL, dt_netprofit_yoy REAL,
+                debt_to_assets REAL, current_ratio REAL, quick_ratio REAL,
+                ar_turn REAL, inv_turn REAL, fa_turn REAL, assets_turn REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_code, end_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.fina_indicator import _write_fina_indicator
+        df = pd.DataFrame({
+            "日期": ["2025-12-31"],
+            "摊薄每股收益": [1.5],
+            "每股净资产": [10.2],
+            "净资产收益率": [15.0],
+        })
+        _write_fina_indicator(conn, "000001.SZ", df)
+        _write_fina_indicator(conn, "000001.SZ", df)
+        rows = conn.execute("SELECT * FROM ts_fina_indicator").fetchall()
+        assert len(rows) == 1
+        conn.close()
