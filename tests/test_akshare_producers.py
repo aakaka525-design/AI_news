@@ -174,3 +174,129 @@ class TestDailyProducer:
         rows = conn.execute("SELECT * FROM ts_daily").fetchall()
         assert len(rows) == 1
         conn.close()
+
+
+class TestDailyBasicProducer:
+    """daily_basic producer 测试"""
+
+    @patch("src.data_ingestion.akshare.producers.daily_basic.ak")
+    def test_fetch_spot_em(self, mock_ak):
+        mock_ak.stock_zh_a_spot_em.return_value = pd.DataFrame({
+            "代码": ["000001", "600036"],
+            "名称": ["平安银行", "招商银行"],
+            "市盈率-动态": [8.5, 6.2],
+            "市净率": [0.9, 1.1],
+            "总市值": [300000000000, 500000000000],
+            "流通市值": [280000000000, 450000000000],
+            "换手率": [1.5, 0.8],
+            "量比": [1.2, 0.9],
+        })
+        from src.data_ingestion.akshare.producers.daily_basic import _fetch_spot_data
+        result = _fetch_spot_data()
+        assert len(result) == 2
+        assert "pe_ttm" in result.columns
+        # 市值应已转换为万元
+        assert result.iloc[0]["total_mv"] == 300000000000 / 10000.0
+
+    def test_write_daily_basic_to_db(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_daily_basic (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT, trade_date TEXT, volume_ratio REAL,
+                pe REAL, pe_ttm REAL, pb REAL,
+                ps REAL, ps_ttm REAL, dv_ratio REAL, dv_ttm REAL,
+                total_mv REAL, circ_mv REAL,
+                total_share REAL, float_share REAL, free_share REAL,
+                turnover_rate REAL, turnover_rate_f REAL,
+                updated_at TIMESTAMP, UNIQUE(ts_code, trade_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.daily_basic import _write_daily_basic
+        df = pd.DataFrame({
+            "ts_code": ["000001.SZ"],
+            "pe_ttm": [8.5], "pb": [0.9],
+            "total_mv": [30000000.0], "circ_mv": [28000000.0],
+            "turnover_rate": [1.5], "volume_ratio": [1.2],
+        })
+        count = _write_daily_basic(conn, df, "20260309")
+        assert count == 1
+        rows = conn.execute("SELECT * FROM ts_daily_basic").fetchall()
+        assert len(rows) == 1
+        conn.close()
+
+
+class TestMoneyflowProducer:
+    """moneyflow producer 测试"""
+
+    def test_market_for_symbol(self):
+        from src.data_ingestion.akshare.producers.moneyflow import _market_for_symbol
+        assert _market_for_symbol("600036") == "sh"
+        assert _market_for_symbol("000001") == "sz"
+        assert _market_for_symbol("300750") == "sz"
+
+    def test_write_moneyflow_to_db(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_moneyflow (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT, trade_date TEXT,
+                buy_sm_vol REAL, buy_md_vol REAL, buy_lg_vol REAL, buy_elg_vol REAL,
+                sell_sm_vol REAL, sell_md_vol REAL, sell_lg_vol REAL, sell_elg_vol REAL,
+                buy_sm_amount REAL, buy_md_amount REAL, buy_lg_amount REAL, buy_elg_amount REAL,
+                sell_sm_amount REAL, sell_md_amount REAL, sell_lg_amount REAL, sell_elg_amount REAL,
+                net_mf_vol REAL, net_mf_amount REAL,
+                updated_at TIMESTAMP, UNIQUE(ts_code, trade_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.moneyflow import _write_moneyflow
+        row = pd.Series({"主力净流入-净额": 50000000.0})
+        result = _write_moneyflow(conn, "000001.SZ", "20260309", row)
+        assert result is True
+        conn.commit()
+        rows = conn.execute("SELECT * FROM ts_moneyflow").fetchall()
+        assert len(rows) == 1
+        conn.close()
+
+
+class TestHkHoldProducer:
+    """hk_hold producer 测试"""
+
+    @patch("src.data_ingestion.akshare.producers.hk_hold.ak")
+    def test_fetch_hk_hold_data(self, mock_ak):
+        mock_ak.stock_hsgt_hold_stock_em.return_value = pd.DataFrame({
+            "代码": ["000001", "600036"],
+            "名称": ["平安银行", "招商银行"],
+            "今日持股-股数": [1000000, 2000000],
+            "今日持股-占流通股比": [0.5, 0.3],
+        })
+        from src.data_ingestion.akshare.producers.hk_hold import _fetch_hk_hold_data
+        result = _fetch_hk_hold_data()
+        assert len(result) == 2
+
+    def test_write_hk_hold_to_db(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_hk_hold (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT, trade_date TEXT,
+                vol INTEGER, ratio REAL, exchange TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_code, trade_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.hk_hold import _write_hk_hold
+        df = pd.DataFrame({
+            "代码": ["000001", "600036"],
+            "今日持股-股数": [1000000, 2000000],
+            "今日持股-占流通股比": [0.5, 0.3],
+        })
+        count = _write_hk_hold(conn, df, "20260309")
+        assert count == 2
+        rows = conn.execute("SELECT * FROM ts_hk_hold").fetchall()
+        assert len(rows) == 2
+        conn.close()
