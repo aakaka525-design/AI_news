@@ -33,6 +33,13 @@ jobs:
           python -m py_compile src/scoring/factors.py
           python -m py_compile src/scoring/freshness.py
           python -m py_compile src/scoring/exclusions.py
+          python -m py_compile src/data_ingestion/akshare/producers/utils.py
+          python -m py_compile src/data_ingestion/akshare/producers/stock_basic.py
+          python -m py_compile src/data_ingestion/akshare/producers/daily.py
+          python -m py_compile src/data_ingestion/akshare/producers/daily_basic.py
+          python -m py_compile src/data_ingestion/akshare/producers/moneyflow.py
+          python -m py_compile src/data_ingestion/akshare/producers/hk_hold.py
+          python -m py_compile src/data_ingestion/akshare/producers/fina_indicator.py
       - name: Run tests
         run: pytest tests/ -v --tb=short -x || true
       - name: Check response_model coverage

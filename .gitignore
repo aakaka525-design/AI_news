@@ -39,3 +39,4 @@ trendradar/output/
 
 # Claude Code
 .claude/
+stocks.db
