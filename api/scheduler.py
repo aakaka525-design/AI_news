@@ -593,11 +593,11 @@ def register_default_tasks():
     # 综合评分（带 telemetry）
     # ------------------------------------------------------------------
     from src.scoring.engine import compute_all_scores
-    from fetchers.trading_calendar import get_recent_trading_days
+    from fetchers.trading_calendar import get_prev_n_trading_days
 
     def composite_score_task():
         # 使用最近交易日作为评分日期
-        recent = get_recent_trading_days(1)
+        recent = get_prev_n_trading_days(1)
         if not recent:
             logger.warning("无可用交易日，跳过综合评分")
             return [
