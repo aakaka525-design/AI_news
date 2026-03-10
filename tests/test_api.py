@@ -574,3 +574,30 @@ class TestScoresRankingEndpoint:
     def test_ranking_with_low_confidence(self, client):
         resp = client.get("/api/scores/ranking", params={"include_low_confidence": True})
         assert resp.status_code == 200
+
+
+class TestSchedulerTaskConfigs:
+    """验证 scheduler TASK_CONFIGS 包含 AkShare 任务且不含旧 Tushare 任务"""
+
+    def test_akshare_tasks_in_config(self):
+        from api.scheduler import TASK_CONFIGS
+        for task_id in [
+            "akshare_stock_basic", "akshare_daily", "akshare_daily_basic",
+            "akshare_moneyflow", "akshare_hk_hold", "akshare_fina_indicator",
+        ]:
+            assert task_id in TASK_CONFIGS, f"{task_id} 应在 TASK_CONFIGS 中"
+
+    def test_old_tushare_tasks_removed(self):
+        from api.scheduler import TASK_CONFIGS
+        for old_id in ["stock_indicators", "fund_flow", "macro_data"]:
+            assert old_id not in TASK_CONFIGS, f"{old_id} 不应在 TASK_CONFIGS 中"
+
+    def test_akshare_expected_datasets(self):
+        from api.scheduler import TASK_EXPECTED_DATASETS
+        for task_id in [
+            "akshare_stock_basic", "akshare_daily", "akshare_daily_basic",
+            "akshare_moneyflow", "akshare_hk_hold", "akshare_fina_indicator",
+        ]:
+            assert task_id in TASK_EXPECTED_DATASETS, f"{task_id} 应在 TASK_EXPECTED_DATASETS 中"
+            for src, ds, db in TASK_EXPECTED_DATASETS[task_id]:
+                assert src == "akshare", f"{task_id} source_key 应为 akshare"
