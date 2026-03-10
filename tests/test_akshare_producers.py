@@ -107,3 +107,70 @@ class TestStockBasicProducer:
         rows = conn.execute("SELECT * FROM ts_stock_basic").fetchall()
         assert len(rows) == 1
         conn.close()
+
+
+class TestDailyProducer:
+    """daily producer 测试"""
+
+    @patch("src.data_ingestion.akshare.producers.daily.ak")
+    def test_fetch_daily_single_stock(self, mock_ak):
+        mock_ak.stock_zh_a_hist.return_value = pd.DataFrame({
+            "日期": ["2026-03-09"],
+            "开盘": [10.0], "收盘": [10.5], "最高": [10.8], "最低": [9.9],
+            "成交量": [100000], "成交额": [1050000000],
+            "涨跌幅": [5.0], "涨跌额": [0.5], "换手率": [2.5],
+        })
+        from src.data_ingestion.akshare.producers.daily import _fetch_daily_one
+        result = _fetch_daily_one("000001", "20260309", "20260309")
+        assert len(result) == 1
+        assert result.iloc[0]["close"] == 10.5
+
+    def test_write_daily_to_db(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT, trade_date TEXT, open REAL, high REAL,
+                low REAL, close REAL, pre_close REAL, change REAL,
+                pct_chg REAL, vol REAL, amount REAL, adj_factor REAL,
+                updated_at TIMESTAMP, UNIQUE(ts_code, trade_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.daily import _write_daily
+        df = pd.DataFrame({
+            "ts_code": ["000001.SZ"], "trade_date": ["20260309"],
+            "open": [10.0], "high": [10.8], "low": [9.9], "close": [10.5],
+            "pre_close": [10.0], "change": [0.5], "pct_chg": [5.0],
+            "vol": [100000], "amount": [1050000.0], "adj_factor": [1.0],
+        })
+        count = _write_daily(conn, df)
+        assert count == 1
+        rows = conn.execute("SELECT * FROM ts_daily").fetchall()
+        assert len(rows) == 1
+        conn.close()
+
+    def test_write_daily_idempotent(self, tmp_path):
+        db = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE ts_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_code TEXT, trade_date TEXT, open REAL, high REAL,
+                low REAL, close REAL, pre_close REAL, change REAL,
+                pct_chg REAL, vol REAL, amount REAL, adj_factor REAL,
+                updated_at TIMESTAMP, UNIQUE(ts_code, trade_date)
+            )
+        """)
+        from src.data_ingestion.akshare.producers.daily import _write_daily
+        df = pd.DataFrame({
+            "ts_code": ["000001.SZ"], "trade_date": ["20260309"],
+            "open": [10.0], "high": [10.8], "low": [9.9], "close": [10.5],
+            "pre_close": [10.0], "change": [0.5], "pct_chg": [5.0],
+            "vol": [100000], "amount": [1050000.0], "adj_factor": [1.0],
+        })
+        _write_daily(conn, df)
+        _write_daily(conn, df)
+        rows = conn.execute("SELECT * FROM ts_daily").fetchall()
+        assert len(rows) == 1
+        conn.close()
